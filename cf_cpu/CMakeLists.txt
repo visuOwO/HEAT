@@ -19,6 +19,10 @@ else()
   message("OpenMP not found! ")
 endif()
 
+find_package(MPI REQUIRED)
+include_directories(${MPI_INCLUDE_PATH})
+
+
 include_directories(${CMAKE_SOURCE_DIR}/src 
                     ${CMAKE_SOURCE_DIR}/src/splatt 
                     ${CMAKE_SOURCE_DIR}/src/modules 

@@ -4,6 +4,7 @@ import random
 from cpp_base import CPPBase
 import cf_c
 
+
 class Dataset(CPPBase):
     def __init__(self):
         super().__init__()
@@ -61,7 +62,7 @@ class ClickDataset(Dataset):
                 for item in items:
                     if item not in self.item_ids_dic:
                         self.item_ids_dic[item] = item
-                                
+
                     self.user_item_ids.append([user_id, item])
 
         self.gen_dataset_info()
@@ -78,7 +79,6 @@ class ClickDataset(Dataset):
 
         print('\n')
 
-
     def gen_dataset_info(self):
         print(f'gen dataset info of {self.file_path} ')
         self.num_users = len(self.user_ids_dic)
@@ -93,7 +93,7 @@ class ClickDataset(Dataset):
         min_item_id = min(item_ids)
         if max_user_id - min_user_id + 1 != self.num_users:
             print('Warning user_id is not continuous! ')
-        
+
         if max_item_id - min_item_id + 1 != self.num_items:
             print('Warning item_id is not continuous! ')
 
@@ -101,6 +101,30 @@ class ClickDataset(Dataset):
         print(f'number of items: {self.num_items}; min_item_id: {min_item_id}; max_item_id: {max_item_id}')
         print(f'total samples: {len(self.user_item_ids)} ')
         # print('\n')
+
+
+class SubClickDataset(ClickDataset):
+    def __init__(self):
+        Dataset().__init__()
+
+    def split(self, parent_dataset, start, end):
+        Dataset().__init__()
+        self.c_class = cf_c.modules.datasets.ClickDataset
+
+        self.file_path = parent_dataset.file_path
+        self.user_items_dic = parent_dataset.user_items_dic[start:end]
+        self.user_item_ids = []
+        self.user_ids_dic = {}
+        self.item_ids_dic = {}
+        self.num_users = 0
+        self.num_items = 0
+        for (user_id, items) in parent_dataset.user_items_ids:
+            if start <= user_id < end:
+                self.user_item_ids.append([user_id - start, items])
+
+        self.gen_dataset_info()
+
+        print('\n')
 
 
 if __name__ == "__main__":

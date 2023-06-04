@@ -3,8 +3,9 @@ import numpy as np
 import argparse
 import time
 import torch
+import mpi4py
 
-from datasets import ClickDataset
+from datasets import ClickDataset, SubClickDataset
 from behavior_aggregators import AggregatorWeights
 from models import MatrixFactorization
 from cf_config import CFConfig
@@ -15,8 +16,16 @@ import utils
 
 if __name__ == "__main__":
     print('this is main ...')
+
+    MPI = mpi4py.MPI
+    mpi4py.rc.threaded = True
+    mpi4py.rc.thread_level = "funneled"
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='./benchmarks/AmazonBooks/MF_CCL/configs/config0.yaml', 
+    parser.add_argument('--config', type=str, default='./benchmarks/AmazonBooks/MF_CCL/configs/config0.yaml',
                         help='The config file for para config.')
     args = parser.parse_args()
 
@@ -26,12 +35,27 @@ if __name__ == "__main__":
     model_config = config_dic['model_config']
     print(model_config)
 
-    cf_config = CFConfig(emb_dim=model_config['embedding_dim'], num_negs=model_config['num_negs'], max_his=model_config['max_his'], neg_sampler=model_config['neg_sampler'], 
-        tile_size=model_config['tile_size'], refresh_interval=model_config['refresh_interval'], l2=model_config['embedding_regularizer'], clip_val=model_config['clip_val'], 
-        milestones=model_config['milestones'], l_r=model_config['learning_rate'])
+    cf_config = CFConfig(emb_dim=model_config['embedding_dim'], num_negs=model_config['num_negs'],
+                         max_his=model_config['max_his'], neg_sampler=model_config['neg_sampler'],
+                         tile_size=model_config['tile_size'], refresh_interval=model_config['refresh_interval'],
+                         l2=model_config['embedding_regularizer'], clip_val=model_config['clip_val'],
+                         milestones=model_config['milestones'], l_r=model_config['learning_rate'])
 
-    train_file = os.path.join(dataset_config['data_dir'], dataset_config['train_data'])
-    train_data = ClickDataset(train_file, separator=dataset_config['separator'], config=cf_config)
+    if rank == 0:
+        print('--- Start loading data ---')
+        train_file = os.path.join(dataset_config['data_dir'], dataset_config['train_data'])
+        train_data = ClickDataset(train_file, separator=dataset_config['separator'], config=cf_config)
+        k = train_data.num_users // size
+        r = train_data.num_users % size
+        for i in range(1, size):
+            start = i * k + min(i, r)
+            end = start + k + (i < r)
+            sub_dataset = SubClickDataset()
+            sub_dataset.split(train_data, start, end)
+            MPI.COMM_WORLD.send(sub_dataset, dest=i+1, tag=11)
+    else:
+        sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
+        train_data = sub_dataset
 
     cf_config.init_c_instance()
 
@@ -61,5 +85,3 @@ if __name__ == "__main__":
                 print(f'sim_matrix shape: {np.shape(sim_matrix)} !!! ')
 
                 # metrics.evaluate_metrics(train_data, test_data, sim_matrix, eva_metrics)
-
-
