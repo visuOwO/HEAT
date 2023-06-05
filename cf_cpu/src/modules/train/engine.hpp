@@ -3,6 +3,7 @@
 #include <omp.h>
 #include <iostream>
 #include <chrono>
+#include <mpi.h>
 
 #include "../datasets/click_dataset.hpp"
 #include "../behavior_aggregators/behavior_aggregator.hpp"
