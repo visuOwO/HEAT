@@ -76,20 +76,48 @@ namespace cf {
                 const idx_t total_iterations = this->train_data->data_rows;
                 const idx_t total_cols = this->train_data->data_cols;
 
+                // the shared memory is used to partition the columns of the embedding matrix
+                // this is not good, we need to store this sequence in all processes
                 MPI_Win win;
-                int *shared_data;
-                int shared_data_size = total_cols * sizeof(idx_t);
-                MPI_Win_allocate_shared(shared_data_size, sizeof(idx_t), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_data,
-                                        &win);
-                MPI_Win_attach(win, shared_data, shared_data_size);
+                idx_t *shared_data;
+                idx_t *negative_partition;
 
+                shared_data = new idx_t[total_cols];
                 if (rank == 0) {
                     for (idx_t i = 0; i < total_cols; i++) {
                         shared_data[i] = i;
+                        negative_partition[i] = i;
                     }
                 }
-                MPI_Win_fence(0, win);
+#if __cplusplus >= 201103L
+                std::random_shuffle(shared_data, shared_data + total_cols);
+#else
+                std::random_shuffle(shared_data, shared_data + total_cols, std::rand);
+#endif
+                MPI_Bcast(shared_data, total_cols, MPI_INT, 0, MPI_COMM_WORLD);
+                // After this operation, each process should get a sequence of column indices,
+                // which is used for partitioning the columns of the embedding matrix
+                std::map<idx_t, idx_t> col_map;
+                idx_t par_num = num_sub_epochs * world_size;
+                for (idx_t i = 0; i < par_num; i++) {
+                    idx_t q = i / par_num;
+                    idx_t r = i % par_num;
+                    idx_t par_start = i * q + i < r ? q : r;
+                    idx_t par_end = (i + 1) * q + i < r ? q : r;
+                    for (idx_t j = par_start; j < par_end; j++) {
+                        col_map[shared_data[i]] = j;
+                    }
+                }
 
+
+                // map the data into different sub-sub epochs
+                std::map<idx_t, std::vector<std::pair<idx_t, idx_t> > > m;
+                for (idx_t i = 0; i < total_iterations; i++) {
+                    idx_t tmp = col_map[i];
+                    idx_t user_id, item_id;
+                    this->train_data->read_user_item(i, user_id, item_id);
+                    m[tmp].push_back(std::make_pair(user_id, item_id));
+                }
 
                 idx_t num_negs = this->cf_config->num_negs;
                 double local_loss = 0.;
@@ -97,6 +125,8 @@ namespace cf {
                 idx_t max_threads = omp_get_max_threads();
                 datasets::Dataset *train_data_ptr = this->train_data.get();
                 // this->positive_sampler->shuffle();
+
+                // each processor has a local aggregator_weights
                 behavior_aggregators::AggregatorWeights *aggregator_weights_ptr = this->aggregator_weights.get();
                 val_t *local_weights0 = aggregator_weights_ptr->weights0.data();
                 val_t *global_weights0;
@@ -110,33 +140,108 @@ namespace cf {
                 }
 
                 Eigen::initParallel();
+                // each processor do the local training
+                // the first level
+                // select one partition from the shared_data
                 for (int sub_epoch = 0; sub_epoch < num_sub_epochs; sub_epoch++) {
                     Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
                             global_weights0, dim, dim);
                     aggregator_weights_ptr->weights0 = global_weight_mat;
 
-                    //generate random shuffle for each sub-epoch
-                    if (rank == 0) {
-#if __cplusplus <= 201103L
-                        std::random_shuffle(shared_data, shared_data + total_cols);
-#else
-                        std::shuffle(shared_data, shared_data + total_cols, std::default_random_engine(0));
-#endif
-                    }
-                    MPI_Win_fence(0, win);
-
-                    //get local indices from shared index array
-                    idx_t local_size = total_cols / world_size;
-                    std::vector<idx_t> local_indices(shared_data + rank * local_size,
-                                                     shared_data + (rank + 1) * local_size);
-
-
                     local_loss = 0.;
                     idx_t iterations = total_iterations / num_sub_epochs;
+                    idx_t r = total_iterations % num_sub_epochs;
+
+                    idx_t part_start = sub_epoch * iterations + sub_epoch < r ? sub_epoch : r;
+                    idx_t part_end = (sub_epoch + 1) * iterations + sub_epoch < r ? sub_epoch : r;
+
+                    // the second level
+                    for (idx_t j = 0; j < world_size; j++) {
+                        // TODO: finish the second level of training process
+                        // The first thing is to assign the remaining data to different processors
+                        // The second thing is to finish the training process
+                        // Currently version without OpenMP
+                        idx_t user_id = 0;
+                        idx_t pos_id = 0;
+                        std::vector<idx_t> neg_ids(num_negs);
+                        idx_t seed = (this->epoch + 1) * j + this->random_gen->read();
+
+                        negative_samplers::NegativeSampler *negative_sampler = nullptr;
+                        if (this->cf_config->neg_sampler == 1) {
+                            negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
+                                    new negative_samplers::RandomTileNegativeSampler(this->cf_config, seed));
+                        } else {
+                            negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
+                                    new negative_samplers::UniformRandomNegativeSampler(this->cf_config, seed));
+                        }
+
+                        memory::ThreadBuffer *thread_buffer = new memory::ThreadBuffer(this->cf_config->emb_dim, num_negs);
+
+                        behavior_aggregators::BehaviorAggregator behavior_aggregator(train_data_ptr,
+                                                                                     aggregator_weights_ptr,
+                                                                                     cf_config);
+
+                        auto iters = m[sub_epoch * world_size + j]; //positive items
+
+#if __cplusplus >= 201103L
+                        std::random_shuffle(negative_partition, negative_partition + total_cols);
+#else
+                        std::random_shuffle(negative_partition, negative_partition + total_cols, std::rand);
+#endif
+                        idx_t part_size = total_cols / world_size;
+                        random::Uniform *uniform = new random::Uniform(part_size, seed);
+                        idx_t cur_parition = sub_epoch * world_size + j;
+                        for (idx_t k = 0; k < this->cf_config->num_negs; k++) {
+                            idx_t id = uniform->read();
+
+                            //if the negative item and positive item are in the same partition, we need to resample
+                            while (col_map[id] / num_sub_epochs == cur_parition / num_sub_epochs) {
+                                id = uniform->read();
+                            }
+                            neg_ids[k] = id + rank * part_size;
+                        }
+
+                        // determine the range of negative items
+                        idx_t * neg_sample_indices = new idx_t[num_negs];
+
+                        for (auto iter = iters.begin(); iter != iters.end(); iter++) {
+                            user_id = iter->first;
+                            pos_id = iter->second;
+                            // sample negative items to neg_ids
+
+                            local_loss += this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
+                                                                        thread_buffer,
+                                                                        &behavior_aggregator);
+                        }
+
+                        // synchronize item_embedding_weights for positive items
+                        for (idx_t k = part_start; k < part_end; k++) {
+                            idx_t col_id = shared_data[k];  // col id
+                            idx_t col_group = col_map[col_id];  // col group
+                            idx_t src = col_group % world_size + j;  // src processor
+                            val_t * tmp_weights = new val_t[dim];
+                            memory::Array<val_t>* item_embedding_weights = this->model->item_embedding->weights;
+                            item_embedding_weights->read_row(col_id, tmp_weights);
+                            MPI_Bcast((void*) &local_loss,dim,MPI_DOUBLE,src,MPI_COMM_WORLD);
+                            item_embedding_weights->write_row(col_id, tmp_weights);
+                        }
+
+                        // synchronize item_embedding_weights for negative items
+                        for (idx_t k = 0; k < part_size * world_size; k++) {
+                            idx_t col_id = negative_partition[k];  // col id
+                            idx_t src = k / world_size;
+                            val_t * tmp_weights = new val_t[dim];
+                            memory::Array<val_t>* item_embedding_weights = this->model->item_embedding->weights;
+                            item_embedding_weights->read_row(col_id, tmp_weights);
+                            MPI_Bcast((void*) &local_loss,dim,MPI_DOUBLE,src,MPI_COMM_WORLD);
+                            item_embedding_weights->write_row(col_id, tmp_weights);
+                        }
+
+                    }
 
 
 // #pragma omp parallel reduction(+ : local_loss) shared(train_data_ptr, aggregator_weights_ptr)
-#pragma omp parallel reduction(+ : local_loss)
+/* #pragma omp parallel reduction(+ : local_loss)
                     {
                         idx_t user_id = 0;
                         idx_t pos_id = 0;
@@ -184,7 +289,7 @@ namespace cf {
                                                                         &behavior_aggregator);
                         }
                         // performance_breakdown(t_buf);
-                    }
+                    }*/
 
                     // this->cf_modules->optimizer->dense_step(this->model->user_embedding);
                     this->model->user_embedding->zero_grad();
@@ -201,6 +306,20 @@ namespace cf {
                                   MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
                     for (idx_t i = 0; i < dim * dim; ++i) {
                         global_weights0[i] /= world_size;
+                    }
+
+                    idx_t emb_dim = this->cf_config->emb_dim;
+                    val_t * global_item_embedding = new val_t[emb_dim];
+                    val_t * item_embedding = new val_t[emb_dim];
+                    for (idx_t i = 0; i < this->train_data->data_cols; ++i) {
+
+                        this->model->item_embedding->read_weights(i,item_embedding);
+                        MPI_Allreduce((void *) item_embedding, (void *) global_item_embedding, emb_dim,
+                                      MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                        for (idx_t j = 0; j < emb_dim; ++j) {
+                            global_item_embedding[j] /= world_size;
+                        }
+                        this->model->item_embedding->write_weights(i,global_item_embedding);
                     }
                 }
 
