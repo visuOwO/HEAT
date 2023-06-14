@@ -157,9 +157,6 @@ namespace cf {
 
                     // the second level
                     for (idx_t j = 0; j < world_size; j++) {
-                        // TODO: finish the second level of training process
-                        // The first thing is to assign the remaining data to different processors
-                        // The second thing is to finish the training process
                         // Currently version without OpenMP
                         idx_t user_id = 0;
                         idx_t pos_id = 0;
