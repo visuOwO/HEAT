@@ -12,7 +12,7 @@ void init_cf_config(py::module_& modules_module)
 {
     py::class_<cf::modules::CFConfig, 
         std::shared_ptr<cf::modules::CFConfig>>(modules_module, "CFConfig")
-        .def(py::init<idx_t, idx_t, idx_t, idx_t, idx_t, idx_t, idx_t, idx_t, val_t, val_t, std::vector<idx_t>&, val_t>(),
+        .def(py::init<idx_t, idx_t, idx_t, idx_t, idx_t, idx_t, idx_t, idx_t, idx_t, val_t, val_t, std::vector<idx_t>&, val_t>(),
             py::arg("emb_dim"),
             py::arg("num_negs"),
             py::arg("num_users"),
@@ -21,6 +21,7 @@ void init_cf_config(py::module_& modules_module)
             py::arg("neg_sampler"),
             py::arg("tile_size"),
             py::arg("refresh_interval"),
+            py::arg("num_subepochs"),
             py::arg("l2"),
             py::arg("clip_val"),
             py::arg("milestones"),

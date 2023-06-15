@@ -115,7 +115,7 @@ void BehaviorAggregator::forward(idx_t user_id, val_t* user_emb_ptr, embeddings:
     t_buf->time_map["read_his"] = t_buf->time_map["read_his"] + (end_time - start_time);
     start_time = end_time;
 
-    Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic> f_c0 = this->means.matrix() * this->aggregator_weights->local_weights0.matrix();
+    Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic> f_c0 = this->means.matrix() * this->aggregator_weights->weights0.matrix();
     // Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic> outs = this->gamma * user_emb + (1 - this->gamma) * f_c0;
     // memcpy(user_emb_ptr, outs.data(), emb_dim * sizeof(val_t));
 
