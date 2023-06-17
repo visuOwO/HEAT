@@ -1,5 +1,5 @@
 dataset_config:
-    data_dir: /Data/amazon-book
+    data_dir: /home/hld/HEAT/LightGCN/Data/amazon-book
     data_format: txt
     separator: ' '
     train_data: train.txt

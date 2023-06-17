@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include <mpi.h>
 
 namespace cf {
     namespace modules {
@@ -322,7 +323,7 @@ namespace cf {
 
                 this->epoch += 1;
                 local_loss /= total_iterations;
-                MPI_Allgather(&local_loss, 1, MPI_DOUBLE, &global_loss, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+                MPI_Allreduce((void *) &local_loss, (void *) &global_loss, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
                 global_loss /= total_iterations;
                 return global_loss;
             }

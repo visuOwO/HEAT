@@ -39,7 +39,8 @@ file(GLOB CF_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/models/*.cpp 
     ${CMAKE_SOURCE_DIR}/src/modules/negative_samplers/*.cpp 
     ${CMAKE_SOURCE_DIR}/src/modules/optimizers/*.cpp 
-    ${CMAKE_SOURCE_DIR}/src/modules/train/*.cpp 
+    ${CMAKE_SOURCE_DIR}/src/modules/train/*.cpp
+        ${CMAKE_SOURCE_DIR}/src/modules/test/*.cpp
     )
 
 find_package(Eigen3 REQUIRED)
@@ -52,6 +53,7 @@ add_subdirectory(extern/pybind11)
 file(GLOB PYBIND_SOURCES src/pybind/*.cpp)
 pybind11_add_module(cf_c MODULE ${PYBIND_SOURCES})
 target_link_libraries(cf_c PUBLIC cf)
+target_link_libraries(cf_c PUBLIC mpi)
 
 set_target_properties(cf_c PROPERTIES CXX_VISIBILITY_PRESET "hidden" 
                           CUDA_VISIBILITY_PRESET "hidden")

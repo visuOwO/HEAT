@@ -6,6 +6,8 @@
 #include "../modules/behavior_aggregators/behavior_aggregator.hpp"
 #include "../modules/train/engine.hpp"
 
+#include "../modules/test/test_out.h"
+
 namespace py = pybind11;
 
 void init_cf_config(py::module_& modules_module)
@@ -21,7 +23,7 @@ void init_cf_config(py::module_& modules_module)
             py::arg("neg_sampler"),
             py::arg("tile_size"),
             py::arg("refresh_interval"),
-            py::arg("num_subepochs"),
+            py::arg("num_subepoches"),
             py::arg("l2"),
             py::arg("clip_val"),
             py::arg("milestones"),
@@ -129,6 +131,14 @@ void init_train(py::module_& modules_module)
         // .def_readwrite("var", &cf::modules::train::Engine::var);
 }
 
+void init_test(py::module_& modules_module) {
+    py::module_ test_module = modules_module.def_submodule("test", "test");
+
+    py::class_<test::test_out, std::shared_ptr<test::test_out>>(test_module,"test_out")
+        .def(py::init<>())
+        .def("test", &test::test_out::print);
+}
+
 void init_modules(py::module_& cf_module)
 {
     py::module_ modules_module = cf_module.def_submodule("modules", "modules");
@@ -138,4 +148,5 @@ void init_modules(py::module_& cf_module)
     init_models(modules_module);
     init_behavior_aggregators(modules_module);
     init_train(modules_module);
+    init_test(modules_module);
 }

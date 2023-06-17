@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import mpi4py.MPI as MPI
 
 from cpp_base import CPPBase
 import cf_c
@@ -102,6 +103,9 @@ class ClickDataset(Dataset):
         print(f'total samples: {len(self.user_item_ids)} ')
         # print('\n')
 
+    def get_user_items(self):
+        return self.user_items_dic
+
 
 class SubClickDataset(ClickDataset):
     def __init__(self):
@@ -112,15 +116,22 @@ class SubClickDataset(ClickDataset):
         self.c_class = cf_c.modules.datasets.ClickDataset
 
         self.file_path = parent_dataset.file_path
-        self.user_items_dic = parent_dataset.user_items_dic[start:end]
+        self.user_items_dic = {}
+        for user_id in parent_dataset.get_user_items():
+            if start <= user_id < end:
+                self.user_items_dic[user_id - start] = parent_dataset.get_user_items()[user_id]
         self.user_item_ids = []
         self.user_ids_dic = {}
         self.item_ids_dic = {}
         self.num_users = 0
         self.num_items = 0
-        for (user_id, items) in parent_dataset.user_items_ids:
-            if start <= user_id < end:
-                self.user_item_ids.append([user_id - start, items])
+        for user_id in self.user_items_dic:
+            items = self.user_items_dic[user_id]
+            for item in items:
+                if item not in self.item_ids_dic:
+                    self.item_ids_dic[item] = item
+                self.user_item_ids.append([user_id, item])
+            self.user_ids_dic[user_id] = user_id
 
         self.gen_dataset_info()
 

@@ -27,6 +27,11 @@ class CFConfig(CPPBase):
         self.max_his = max_his
 
     def init_c_instance(self):
+        print(type(self.emb_dim), type(self.num_negs), type(self.num_users), type(self.num_items),
+              type(self.train_size),
+              type(self.neg_sampler), type(self.tile_size), type(self.refresh_interval), type(self.num_subepoches),
+              type(self.l2), type(self.clip_val), type(self.milestones), type(self.l_r))
+        print(type(self.milestones[0]), len(self.milestones))
         self.c_instance = self.c_class(emb_dim=self.emb_dim, num_negs=self.num_negs, num_users=self.num_users,
                                        num_items=self.num_items, train_size=self.train_size,
                                        neg_sampler=self.neg_sampler, tile_size=self.tile_size,

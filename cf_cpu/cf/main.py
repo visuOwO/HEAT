@@ -5,12 +5,14 @@ import time
 import torch
 import mpi4py
 
-from datasets import ClickDataset, SubClickDataset
 from behavior_aggregators import AggregatorWeights
+from datasets import ClickDataset, SubClickDataset
 from models import MatrixFactorization
 from cf_config import CFConfig
 from train import Engine
+
 import metrics
+import cf_c
 
 import utils
 
@@ -52,10 +54,13 @@ if __name__ == "__main__":
             end = start + k + (i < r)
             sub_dataset = SubClickDataset()
             sub_dataset.split(train_data, start, end)
-            MPI.COMM_WORLD.send(sub_dataset, dest=i+1, tag=11)
+            MPI.COMM_WORLD.send(sub_dataset, dest=i, tag=11)
     else:
         sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
         train_data = sub_dataset
+
+    test = cf_c.modules.test.test_out()
+    test.test("finished loading dataset")
 
     cf_config.init_c_instance()
 
@@ -67,10 +72,13 @@ if __name__ == "__main__":
     model.init_c_instance(cf_config)
     engine = Engine(train_data, aggregator_weights, model, cf_config)
 
+    test.test("finished initializing engine")
+
     eval_interval = model_config['eval_interval']
     for epoch in range(model_config['epochs']):
         start_time = time.time()
 
+        test.test("start training epoch")
         epoch_loss = engine.train_one_epoch()
 
         epoch_time = time.time() - start_time
