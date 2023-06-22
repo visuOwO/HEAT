@@ -1,5 +1,5 @@
 dataset_config:
-    data_dir: /Data/gowalla
+    data_dir: /home/hld/HEAT/LightGCN/Data/gowalla
     data_format: txt
     separator: ' '
     train_data: train.txt

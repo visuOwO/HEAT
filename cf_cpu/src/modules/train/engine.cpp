@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include <mpi.h>
+#include <set>
 
 namespace cf {
     namespace modules {
@@ -75,15 +76,19 @@ namespace cf {
                 auto start = std::chrono::steady_clock::now();
 
                 const idx_t total_iterations = this->train_data->data_rows;
-                const idx_t total_cols = this->train_data->data_cols;
+                const idx_t total_rows = this->cf_config->num_users;
+                const idx_t total_cols = this->cf_config->num_items;
+                std::cout << "total iterations: " << total_iterations << std::endl;
+                std::cout << "total cols: " << total_cols << std::endl;
 
+                std::cout << "finished initializing" << std::endl;
                 // the shared memory is used to partition the columns of the embedding matrix
                 // this is not good, we need to store this sequence in all processes
-                MPI_Win win;
                 idx_t *shared_data;
                 idx_t *negative_partition;
 
                 shared_data = new idx_t[total_cols];
+                negative_partition = new idx_t[total_cols];
                 if (rank == 0) {
                     for (idx_t i = 0; i < total_cols; i++) {
                         shared_data[i] = i;
@@ -95,21 +100,24 @@ namespace cf {
 #else
                 std::random_shuffle(shared_data, shared_data + total_cols, std::rand);
 #endif
-                MPI_Bcast(shared_data, total_cols, MPI_INT, 0, MPI_COMM_WORLD);
+                MPI_Bcast(shared_data, total_cols, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
                 // After this operation, each process should get a sequence of column indices,
                 // which is used for partitioning the columns of the embedding matrix
                 std::map<idx_t, idx_t> col_map;
                 idx_t par_num = num_sub_epochs * world_size;
+                std::cout << "par_num: " << par_num << std::endl;
                 for (idx_t i = 0; i < par_num; i++) {
-                    idx_t q = i / par_num;
-                    idx_t r = i % par_num;
-                    idx_t par_start = i * q + i < r ? q : r;
-                    idx_t par_end = (i + 1) * q + i < r ? q : r;
+                    idx_t q = total_cols / par_num;
+                    idx_t r = total_cols % par_num;
+                    idx_t par_start = i * q + (i < r);
+                    idx_t par_end = (i + 1) * q + ((i + 1) < r);
+                    std::cout << "par_start: " << par_start << " par_end: " << par_end << std::endl;
                     for (idx_t j = par_start; j < par_end; j++) {
-                        col_map[shared_data[i]] = j;
+                        col_map[shared_data[j]] = i;
+                        std::cout << "col_map[" << shared_data[j] << "] = " << i << std::endl;
                     }
                 }
-
 
                 // map the data into different sub-sub epochs
                 std::map<idx_t, std::vector<std::pair<idx_t, idx_t> > > m;
@@ -145,20 +153,27 @@ namespace cf {
                 // the first level
                 // select one partition from the shared_data
                 for (int sub_epoch = 0; sub_epoch < num_sub_epochs; sub_epoch++) {
+                    std::cout << "sub_epoch: " << sub_epoch << std::endl;
+
                     Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
                             global_weights0, dim, dim);
                     aggregator_weights_ptr->weights0 = global_weight_mat;
 
                     local_loss = 0.;
-                    idx_t iterations = total_iterations / num_sub_epochs;
-                    idx_t r = total_iterations % num_sub_epochs;
 
-                    idx_t part_start = sub_epoch * iterations + sub_epoch < r ? sub_epoch : r;
-                    idx_t part_end = (sub_epoch + 1) * iterations + sub_epoch < r ? sub_epoch : r;
+                    idx_t num_col_sub_epoch = total_cols / num_sub_epochs;
+                    idx_t r = total_cols % num_sub_epochs;
+
+                    //the part is the partition of the first level, the partition that used to sample the positive items
+                    idx_t part_start = sub_epoch * num_col_sub_epoch + sub_epoch < r ? sub_epoch : r;
+                    idx_t part_end = (sub_epoch + 1) * num_col_sub_epoch + sub_epoch < r ? sub_epoch : r;
 
                     // the second level
+                    // in this level, each process sample in its own partition (level 2) and update the weights
                     for (idx_t j = 0; j < world_size; j++) {
-                        // Currently version without OpenMP
+                        std::cout << "j: " << j << std::endl;
+
+                        // Currently version without support of OpenMP
                         idx_t user_id = 0;
                         idx_t pos_id = 0;
                         std::vector<idx_t> neg_ids(num_negs);
@@ -179,32 +194,48 @@ namespace cf {
                                                                                      aggregator_weights_ptr,
                                                                                      cf_config);
 
-                        auto iters = m[sub_epoch * world_size + j]; //positive items
 
+                        auto iters = m[sub_epoch * world_size + j]; //positive items in current partition
+
+
+                        //shuffle all the columns again for negative sampling
+                        if (rank == 0) {
 #if __cplusplus >= 201103L
-                        std::random_shuffle(negative_partition, negative_partition + total_cols);
+                            std::random_shuffle(negative_partition, negative_partition + total_cols);
 #else
-                        std::random_shuffle(negative_partition, negative_partition + total_cols, std::rand);
+                            std::random_shuffle(negative_partition, negative_partition + total_cols, std::rand);
 #endif
+                        }
+                        MPI_Bcast(negative_partition, total_cols, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+                        std::cout << "NEG TEST " << negative_partition[0] << std::endl;
                         idx_t part_size = total_cols / world_size;
+                        std::cout << total_cols << std::endl;
                         random::Uniform *uniform = new random::Uniform(part_size, seed);
                         idx_t cur_parition = sub_epoch * world_size + j;
                         for (idx_t k = 0; k < this->cf_config->num_negs; k++) {
-                            idx_t id = uniform->read();
+
+                            // id is the position in negative_partition
+                            idx_t id = uniform->read() + rank * part_size;
 
                             //if the negative item and positive item are in the same partition, we need to resample
-                            while (col_map[id] / num_sub_epochs == cur_parition / num_sub_epochs) {
-                                id = uniform->read();
+                            while (col_map[negative_partition[id]] / num_sub_epochs == cur_parition / num_sub_epochs) {
+                                id = uniform->read() + rank * part_size;
+                                //std::cout << "resample" << id <<std::endl;
+                                //std::cout << col_map[negative_partition[id]]  << " " << cur_parition << std::endl;
                             }
-                            neg_ids[k] = id + rank * part_size;
+                            neg_ids[k] = id;
                         }
 
                         // determine the range of negative items
                         idx_t * neg_sample_indices = new idx_t[num_negs];
 
+                        //std::cout << "before sample" << std::endl;
+                        int count = 0;
                         for (auto iter = iters.begin(); iter != iters.end(); iter++) {
+                            //std::cout << count << std::endl;
                             user_id = iter->first;
                             pos_id = iter->second;
+                            count ++;
                             // sample negative items to neg_ids
 
                             local_loss += this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
@@ -212,6 +243,7 @@ namespace cf {
                                                                         &behavior_aggregator);
                         }
 
+                        std::cout << "start synchronize positive item embedding weights" << std::endl;
                         // synchronize item_embedding_weights for positive items
                         for (idx_t k = part_start; k < part_end; k++) {
                             idx_t col_id = shared_data[k];  // col id
@@ -220,20 +252,24 @@ namespace cf {
                             val_t * tmp_weights = new val_t[dim];
                             memory::Array<val_t>* item_embedding_weights = this->model->item_embedding->weights;
                             item_embedding_weights->read_row(col_id, tmp_weights);
-                            MPI_Bcast((void*) &local_loss,dim,MPI_DOUBLE,src,MPI_COMM_WORLD);
+                            MPI_Bcast((void*) &local_loss,dim,MPI_FLOAT,src,MPI_COMM_WORLD);
                             item_embedding_weights->write_row(col_id, tmp_weights);
                         }
 
+                        std::cout << "start synchronize negative item embedding weights" << std::endl;
                         // synchronize item_embedding_weights for negative items
                         for (idx_t k = 0; k < part_size * world_size; k++) {
+                            std::cout << "k: " << k << std::endl;
                             idx_t col_id = negative_partition[k];  // col id
                             idx_t src = k / world_size;
                             val_t * tmp_weights = new val_t[dim];
                             memory::Array<val_t>* item_embedding_weights = this->model->item_embedding->weights;
                             item_embedding_weights->read_row(col_id, tmp_weights);
-                            MPI_Bcast((void*) &local_loss,dim,MPI_DOUBLE,src,MPI_COMM_WORLD);
+                            MPI_Bcast((void*) &local_loss,dim,MPI_FLOAT,src,MPI_COMM_WORLD);
                             item_embedding_weights->write_row(col_id, tmp_weights);
                         }
+
+                        std::cout << "finished synchronize" << std::endl;
 
                     }
 
@@ -267,13 +303,13 @@ namespace cf {
 
 #pragma omp master
                         {
-                            std::cout << "iterations " << iterations << " max_threads " << num_threads << std::endl;
+                            std::cout << "num_col_sub_epoch " << num_col_sub_epoch << " max_threads " << num_threads << std::endl;
                         }
 
 // #pragma omp for schedule(dynamic, 4)
 // for (idx_t i = 0; i < 16; ++i)
 #pragma omp for schedule(dynamic, 512)
-                        for (idx_t i = 0; i < iterations; ++i) {
+                        for (idx_t i = 0; i < num_col_sub_epoch; ++i) {
                             double start_time = omp_get_wtime();
                             idx_t train_data_idx = this->positive_sampler->read(i);
                             this->train_data->read_user_item(train_data_idx, user_id, pos_id);

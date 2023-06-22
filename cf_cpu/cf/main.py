@@ -44,20 +44,27 @@ if __name__ == "__main__":
                          milestones=model_config['milestones'], l_r=model_config['learning_rate'])
 
     if rank == 0:
-        print('--- Start loading data ---')
+        print('--- Start loading data --- in ' + str(rank))
         train_file = os.path.join(dataset_config['data_dir'], dataset_config['train_data'])
         train_data = ClickDataset(train_file, separator=dataset_config['separator'], config=cf_config)
         k = train_data.num_users // size
         r = train_data.num_users % size
+        print('--- Finished loading data from file ... ---')
         for i in range(1, size):
             start = i * k + min(i, r)
             end = start + k + (i < r)
-            sub_dataset = SubClickDataset()
-            sub_dataset.split(train_data, start, end)
+            sub_dataset = SubClickDataset(train_data, start, end, i)
             MPI.COMM_WORLD.send(sub_dataset, dest=i, tag=11)
+        new_dataset = SubClickDataset(train_data, 0, k + min(0, r), rank)
+        print('--- Finished dividing data ...  start sending data ... ---')
+        train_data = new_dataset
     else:
+        print('-- Start receiving data -- in ' + str(rank))
         sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
         train_data = sub_dataset
+
+    print('--- Finished loading data --- in ' + str(rank))
+    train_data.update_config(cf_config)
 
     test = cf_c.modules.test.test_out()
     test.test("finished loading dataset")

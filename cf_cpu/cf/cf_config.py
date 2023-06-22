@@ -4,7 +4,7 @@ import cf_c
 
 class CFConfig(CPPBase):
     def __init__(self, emb_dim=64, num_negs=4, max_his=8, num_users=128, num_items=128, train_size=128,
-                 neg_sampler=0, tile_size=1024, num_subepoches=1, refresh_interval=2048, l2=1.e-3, clip_val=0.1,
+                 neg_sampler=0, tile_size=1024, num_subepoches=2, refresh_interval=2048, l2=1.e-3, clip_val=0.1,
                  milestones=[], l_r=1.e-3):
         super().__init__()
         self.c_class = cf_c.modules.CFConfig
