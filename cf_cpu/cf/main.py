@@ -43,6 +43,8 @@ if __name__ == "__main__":
                          l2=model_config['embedding_regularizer'], clip_val=model_config['clip_val'],
                          milestones=model_config['milestones'], l_r=model_config['learning_rate'])
 
+
+    test = cf_c.modules.test.test_out()
     if rank == 0:
         print('--- Start loading data --- in ' + str(rank))
         train_file = os.path.join(dataset_config['data_dir'], dataset_config['train_data'])
@@ -50,11 +52,16 @@ if __name__ == "__main__":
         k = train_data.num_users // size
         r = train_data.num_users % size
         print('--- Finished loading data from file ... ---')
+
         for i in range(1, size):
             start = i * k + min(i, r)
             end = start + k + (i < r)
+            test.test(str(start) + " is the start index")
+            test.test(str(end) + " is the end index")
             sub_dataset = SubClickDataset(train_data, start, end, i)
             MPI.COMM_WORLD.send(sub_dataset, dest=i, tag=11)
+        test.test("0 is the starting index")
+        test.test(str(k + min(0, r)) + " is the end index")
         new_dataset = SubClickDataset(train_data, 0, k + min(0, r), rank)
         print('--- Finished dividing data ...  start sending data ... ---')
         train_data = new_dataset
@@ -66,7 +73,7 @@ if __name__ == "__main__":
     print('--- Finished loading data --- in ' + str(rank))
     train_data.update_config(cf_config)
 
-    test = cf_c.modules.test.test_out()
+
     test.test("finished loading dataset")
 
     cf_config.init_c_instance()
@@ -77,6 +84,9 @@ if __name__ == "__main__":
     aggregator_weights = AggregatorWeights(cf_config)
     model = MatrixFactorization(cf_config)
     model.init_c_instance(cf_config)
+    test.test(str(cf_config.num_users) + " is the number of users"
+              + str(cf_config.num_items) + " is the number of items")
+    test.test(str(cf_config.emb_dim) + " is the embedding dimension")
     engine = Engine(train_data, aggregator_weights, model, cf_config)
 
     test.test("finished initializing engine")

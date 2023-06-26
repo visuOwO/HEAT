@@ -155,7 +155,7 @@ class SubClickDataset(Dataset):
         self.inherit_dataset_info(parent_dataset)
 
     def inherit_dataset_info(self, parent_dataset):
-        self.num_users = parent_dataset.num_users
+        self.num_users = len(self.user_ids_dic)
         self.num_items = parent_dataset.num_items
         user_ids = list(self.user_ids_dic.keys())
         item_ids = list(self.item_ids_dic.keys())

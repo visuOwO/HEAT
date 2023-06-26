@@ -101,7 +101,7 @@ namespace cf {
                 std::random_shuffle(shared_data, shared_data + total_cols, std::rand);
 #endif
                 MPI_Bcast(shared_data, total_cols, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-
+                std::cout << shared_data[0] << " " << shared_data[1] << " " << shared_data[2] << " "  << shared_data[3] << std::endl;
                 // After this operation, each process should get a sequence of column indices,
                 // which is used for partitioning the columns of the embedding matrix
                 std::map<idx_t, idx_t> col_map;
@@ -115,10 +115,11 @@ namespace cf {
                     std::cout << "par_start: " << par_start << " par_end: " << par_end << std::endl;
                     for (idx_t j = par_start; j < par_end; j++) {
                         col_map[shared_data[j]] = i;
-                        std::cout << "col_map[" << shared_data[j] << "] = " << i << std::endl;
+                        //std::cout << "col_map[" << shared_data[j] << "] = " << i << std::endl;
                     }
                 }
 
+                std::cout << col_map[shared_data[0]] << " " << col_map[shared_data[1]] << " " << col_map[shared_data[2]] << " "  << col_map[shared_data[3]] << std::endl;
                 // map the data into different sub-sub epochs
                 std::map<idx_t, std::vector<std::pair<idx_t, idx_t> > > m;
                 for (idx_t i = 0; i < total_iterations; i++) {
@@ -140,8 +141,8 @@ namespace cf {
                 val_t *local_weights0 = aggregator_weights_ptr->weights0.data();
                 val_t *global_weights0;
                 idx_t dim = this->cf_config->emb_dim;
+                global_weights0 = new val_t[dim*dim];
                 std::copy(local_weights0, local_weights0 + dim * dim, global_weights0);
-
                 if (this->cf_config->milestones.size() > 1) {
                     this->cf_modules->optimizer->scheduler_multi_step_lr(this->epoch, this->cf_config->milestones, 0.1);
                 } else {
@@ -163,10 +164,12 @@ namespace cf {
 
                     idx_t num_col_sub_epoch = total_cols / num_sub_epochs;
                     idx_t r = total_cols % num_sub_epochs;
-
+                    std::cout << "num_col_sub_epoch: " << num_col_sub_epoch << std::endl;
                     //the part is the partition of the first level, the partition that used to sample the positive items
-                    idx_t part_start = sub_epoch * num_col_sub_epoch + sub_epoch < r ? sub_epoch : r;
-                    idx_t part_end = (sub_epoch + 1) * num_col_sub_epoch + sub_epoch < r ? sub_epoch : r;
+                    idx_t part_start = sub_epoch * num_col_sub_epoch + (sub_epoch < r ? sub_epoch : r);
+                    idx_t part_end = (sub_epoch + 1) * num_col_sub_epoch + (sub_epoch < r ? sub_epoch : r);
+
+                    std::cout << "part_start: " << part_start << " part_end: " << part_end << std::endl;
 
                     // the second level
                     // in this level, each process sample in its own partition (level 2) and update the weights
@@ -207,9 +210,7 @@ namespace cf {
 #endif
                         }
                         MPI_Bcast(negative_partition, total_cols, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-                        std::cout << "NEG TEST " << negative_partition[0] << std::endl;
                         idx_t part_size = total_cols / world_size;
-                        std::cout << total_cols << std::endl;
                         random::Uniform *uniform = new random::Uniform(part_size, seed);
                         idx_t cur_parition = sub_epoch * world_size + j;
                         for (idx_t k = 0; k < this->cf_config->num_negs; k++) {
@@ -227,14 +228,14 @@ namespace cf {
                         }
 
                         // determine the range of negative items
-                        idx_t * neg_sample_indices = new idx_t[num_negs];
+                        auto * neg_sample_indices = new idx_t[num_negs];
 
-                        //std::cout << "before sample" << std::endl;
+                        std::cout << "start sampling positive items" << std::endl;
                         int count = 0;
-                        for (auto iter = iters.begin(); iter != iters.end(); iter++) {
+                        for (auto & iter : iters) {
                             //std::cout << count << std::endl;
-                            user_id = iter->first;
-                            pos_id = iter->second;
+                            user_id = iter.first;
+                            pos_id = iter.second;
                             count ++;
                             // sample negative items to neg_ids
 
@@ -243,17 +244,34 @@ namespace cf {
                                                                         &behavior_aggregator);
                         }
 
+                        //std::cout << "finish sampling positive items" << std::endl;
+
                         std::cout << "start synchronize positive item embedding weights" << std::endl;
+                        std::cout << this->model->item_embedding->num_embs << " " << this->model->item_embedding->emb_dim << std::endl;
                         // synchronize item_embedding_weights for positive items
                         for (idx_t k = part_start; k < part_end; k++) {
+                            std::cout << col_map[k] << std::endl;
+                            std::cout << "synchronizing " << k << "from process " << rank << std::endl;
                             idx_t col_id = shared_data[k];  // col id
+                            std::cout << "col id: " << col_id << std::endl;
                             idx_t col_group = col_map[col_id];  // col group
-                            idx_t src = col_group % world_size + j;  // src processor
-                            val_t * tmp_weights = new val_t[dim];
+                            std::cout << "finish reading from col map from process " << rank << std::endl;
+                            int src = col_group % world_size + j;  // src processor
+                            auto * tmp_weights = new val_t[dim];
                             memory::Array<val_t>* item_embedding_weights = this->model->item_embedding->weights;
+                            std::cout << "start reading from process " << rank << std::endl;
                             item_embedding_weights->read_row(col_id, tmp_weights);
-                            MPI_Bcast((void*) &local_loss,dim,MPI_FLOAT,src,MPI_COMM_WORLD);
+                            std::cout << "start broadcasting from process " << rank << std::endl;
+                            MPI_Bcast((void*) &tmp_weights,dim,MPI_FLOAT,src,MPI_COMM_WORLD);
+                            std::cout << "start writing from process " << rank << std::endl;
                             item_embedding_weights->write_row(col_id, tmp_weights);
+                            std::cout << "finish" << std::endl;
+                            MPI_Barrier(MPI_COMM_WORLD);
+                            break;
+                        }
+
+                        for (idx_t k = 0; k < total_cols; k++) {
+                            std::cout << "col_map[" << k << "]: " << col_map[k] << std::endl;
                         }
 
                         std::cout << "start synchronize negative item embedding weights" << std::endl;
@@ -265,7 +283,7 @@ namespace cf {
                             val_t * tmp_weights = new val_t[dim];
                             memory::Array<val_t>* item_embedding_weights = this->model->item_embedding->weights;
                             item_embedding_weights->read_row(col_id, tmp_weights);
-                            MPI_Bcast((void*) &local_loss,dim,MPI_FLOAT,src,MPI_COMM_WORLD);
+                            MPI_Bcast((void*) &tmp_weights,dim,MPI_FLOAT,src,MPI_COMM_WORLD);
                             item_embedding_weights->write_row(col_id, tmp_weights);
                         }
 
