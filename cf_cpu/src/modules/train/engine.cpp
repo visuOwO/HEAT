@@ -228,7 +228,6 @@ namespace cf {
                         }
 
                         // determine the range of negative items
-                        auto * neg_sample_indices = new idx_t[num_negs];
 
                         std::cout << "start sampling positive items" << std::endl;
                         int count = 0;
@@ -239,18 +238,19 @@ namespace cf {
                             count ++;
                             // sample negative items to neg_ids
 
-                            local_loss += this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
-                                                                        thread_buffer,
-                                                                        &behavior_aggregator);
+                            //local_loss += this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
+                            //                                            thread_buffer, &behavior_aggregator);
                         }
 
                         //std::cout << "finish sampling positive items" << std::endl;
 
                         std::cout << "start synchronize positive item embedding weights" << std::endl;
+                        /*for (int k = 0; k < total_cols; k++) {
+                            printf("col_map[%lu]=%lu from process %d\n", shared_data[k], col_map[shared_data[k]], rank);
+                        }*/
                         std::cout << this->model->item_embedding->num_embs << " " << this->model->item_embedding->emb_dim << std::endl;
                         // synchronize item_embedding_weights for positive items
                         for (idx_t k = part_start; k < part_end; k++) {
-                            std::cout << col_map[k] << std::endl;
                             std::cout << "synchronizing " << k << "from process " << rank << std::endl;
                             idx_t col_id = shared_data[k];  // col id
                             std::cout << "col id: " << col_id << std::endl;
@@ -267,12 +267,9 @@ namespace cf {
                             item_embedding_weights->write_row(col_id, tmp_weights);
                             std::cout << "finish" << std::endl;
                             MPI_Barrier(MPI_COMM_WORLD);
-                            break;
+                            delete[] tmp_weights;
                         }
 
-                        for (idx_t k = 0; k < total_cols; k++) {
-                            std::cout << "col_map[" << k << "]: " << col_map[k] << std::endl;
-                        }
 
                         std::cout << "start synchronize negative item embedding weights" << std::endl;
                         // synchronize item_embedding_weights for negative items
@@ -280,15 +277,16 @@ namespace cf {
                             std::cout << "k: " << k << std::endl;
                             idx_t col_id = negative_partition[k];  // col id
                             idx_t src = k / world_size;
-                            val_t * tmp_weights = new val_t[dim];
+                            auto * tmp_weights = new val_t[dim];
                             memory::Array<val_t>* item_embedding_weights = this->model->item_embedding->weights;
                             item_embedding_weights->read_row(col_id, tmp_weights);
                             MPI_Bcast((void*) &tmp_weights,dim,MPI_FLOAT,src,MPI_COMM_WORLD);
                             item_embedding_weights->write_row(col_id, tmp_weights);
+                            delete[] tmp_weights;
                         }
 
                         std::cout << "finished synchronize" << std::endl;
-
+                        delete uniform;
                     }
 
 
