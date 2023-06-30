@@ -53,7 +53,8 @@ add_subdirectory(extern/pybind11)
 file(GLOB PYBIND_SOURCES src/pybind/*.cpp)
 pybind11_add_module(cf_c MODULE ${PYBIND_SOURCES})
 target_link_libraries(cf_c PUBLIC cf)
-target_link_libraries(cf_c PUBLIC mpi)
+target_link_libraries(cf_c PUBLIC ${MPI_C_LIBRARIES})
+target_link_libraries(cf_c PUBLIC ${MPI_CXX_LIBRARIES})
 
 set_target_properties(cf_c PROPERTIES CXX_VISIBILITY_PRESET "hidden" 
                           CUDA_VISIBILITY_PRESET "hidden")
