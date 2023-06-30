@@ -43,7 +43,6 @@ if __name__ == "__main__":
                          l2=model_config['embedding_regularizer'], clip_val=model_config['clip_val'],
                          milestones=model_config['milestones'], l_r=model_config['learning_rate'])
 
-
     test = cf_c.modules.test.test_out()
     if rank == 0:
         print('--- Start loading data --- in ' + str(rank))
@@ -73,23 +72,35 @@ if __name__ == "__main__":
     print('--- Finished loading data --- in ' + str(rank))
     train_data.update_config(cf_config)
 
-
-    test.test("finished loading dataset")
-
     cf_config.init_c_instance()
 
-    test_file = os.path.join(dataset_config['data_dir'], dataset_config['test_data'])
-    test_data = ClickDataset(test_file, separator=dataset_config['separator'], config=cf_config)
+    if rank == 0:
+        test_file = os.path.join(dataset_config['data_dir'], dataset_config['test_data'])
+        test_data = ClickDataset(test_file, separator=dataset_config['separator'], config=cf_config)
+        k = test_data.num_users // size
+        r = test_data.num_users % size
+
+        for i in range(1, size):
+            start = i * k + min(i, r)
+            end = start + k + (i < r)
+            test.test(str(start) + " is the start index")
+            test.test(str(end) + " is the end index")
+            sub_dataset = SubClickDataset(test_data, start, end, i)
+            MPI.COMM_WORLD.send(sub_dataset, dest=i, tag=11)
+        test.test("0 is the starting index")
+        new_dataset = SubClickDataset(test_data, 0, k + min(0, r), rank)
+        print('--- Finished dividing data ...  start sending data ... ---')
+        test_data = new_dataset
+    else:
+        print('-- Start receiving data -- in ' + str(rank))
+        sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
+        test_data = sub_dataset
 
     aggregator_weights = AggregatorWeights(cf_config)
     model = MatrixFactorization(cf_config)
     model.init_c_instance(cf_config)
-    test.test(str(cf_config.num_users) + " is the number of users"
-              + str(cf_config.num_items) + " is the number of items")
-    test.test(str(cf_config.emb_dim) + " is the embedding dimension")
-    engine = Engine(train_data, aggregator_weights, model, cf_config)
 
-    test.test("finished initializing engine")
+    engine = Engine(train_data, aggregator_weights, model, cf_config)
 
     eval_interval = model_config['eval_interval']
     for epoch in range(model_config['epochs']):
@@ -100,13 +111,14 @@ if __name__ == "__main__":
 
         epoch_time = time.time() - start_time
         print(f'epoch: {epoch}; loss: {epoch_loss}; epoch_time: {epoch_time}')
-
+        test.test(f'epoch: {epoch}; loss: {epoch_loss}; epoch_time: {epoch_time}')
         if epoch > 0 and epoch % eval_interval == 0:
             print('--- Start evaluation ---')
+            test.test("start evaluation")
             model.eval()
             with torch.no_grad():
                 eva_metrics = ['Recall(k=20)']
                 sim_matrix = engine.evaluate0()
                 print(f'sim_matrix shape: {np.shape(sim_matrix)} !!! ')
 
-                # metrics.evaluate_metrics(train_data, test_data, sim_matrix, eva_metrics)
+                metrics.evaluate_metrics(train_data, test_data, sim_matrix, eva_metrics)
