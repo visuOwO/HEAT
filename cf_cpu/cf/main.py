@@ -55,21 +55,23 @@ if __name__ == "__main__":
         for i in range(1, size):
             start = i * k + min(i, r)
             end = start + k + (i < r)
-            test.test(str(start) + " is the start index")
-            test.test(str(end) + " is the end index")
+            # test.test(str(start) + " is the start index")
+            # test.test(str(end) + " is the end index")
             sub_dataset = SubClickDataset(train_data, start, end, i)
             MPI.COMM_WORLD.send(sub_dataset, dest=i, tag=11)
-        test.test("0 is the starting index")
-        test.test(str(k + min(0, r)) + " is the end index")
+            # test.test(str(len(sub_dataset.user_item_ids)) + " is the length of sub user_item_ids of rank " + str(i))
+        # test.test("0 is the starting index")
+        # test.test(str(k + min(0, r)) + " is the end index")
         new_dataset = SubClickDataset(train_data, 0, k + min(0, r), rank)
-        print('--- Finished dividing data ...  start sending data ... ---')
+        # print('--- Finished dividing data ...  start sending data ... ---')
+        # test.test(str(len(new_dataset.user_item_ids)) + " is the length of sub user_item_ids of rank " + str(0))
         train_data = new_dataset
     else:
-        print('-- Start receiving data -- in ' + str(rank))
+        # print('-- Start receiving data -- in ' + str(rank))
         sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
         train_data = sub_dataset
 
-    print('--- Finished loading data --- in ' + str(rank))
+    # print('--- Finished loading data --- in ' + str(rank))
     train_data.update_config(cf_config)
 
     cf_config.init_c_instance()
@@ -83,16 +85,16 @@ if __name__ == "__main__":
         for i in range(1, size):
             start = i * k + min(i, r)
             end = start + k + (i < r)
-            test.test(str(start) + " is the start index")
-            test.test(str(end) + " is the end index")
+            # test.test(str(start) + " is the start index")
+            # test.test(str(end) + " is the end index")
             sub_dataset = SubClickDataset(test_data, start, end, i)
             MPI.COMM_WORLD.send(sub_dataset, dest=i, tag=11)
-        test.test("0 is the starting index")
+        # test.test("0 is the starting index")
         new_dataset = SubClickDataset(test_data, 0, k + min(0, r), rank)
-        print('--- Finished dividing data ...  start sending data ... ---')
+        # print('--- Finished dividing data ...  start sending data ... ---')
         test_data = new_dataset
     else:
-        print('-- Start receiving data -- in ' + str(rank))
+        # print('-- Start receiving data -- in ' + str(rank))
         sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
         test_data = sub_dataset
 

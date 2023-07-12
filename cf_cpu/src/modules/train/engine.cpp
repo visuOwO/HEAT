@@ -166,9 +166,6 @@ namespace cf {
                 for (int sub_epoch = 0; sub_epoch < num_sub_epochs; sub_epoch++) {
                     //std::cout << "sub_epoch: " << sub_epoch << std::endl;
 
-                    Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
-                            global_weights0, dim, dim);
-                    aggregator_weights_ptr->weights0 = global_weight_mat;
 
                     local_loss = 0.;
 
@@ -184,6 +181,11 @@ namespace cf {
                     // the second level
                     // in this level, each process sample in its own partition (level 2) and update the weights
                     for (idx_t j = 0; j < world_size; j++) {
+
+                        //sync aggregator_weights
+                        Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
+                                global_weights0, dim, dim);
+                        aggregator_weights_ptr->weights0 = global_weight_mat;
 
                         // Currently version without support of OpenMP
                         idx_t user_id = 0;
@@ -222,19 +224,7 @@ namespace cf {
                         idx_t part_size = total_cols / world_size;
                         random::Uniform *uniform = new random::Uniform(part_size, seed);
                         idx_t cur_parition = sub_epoch * world_size + j;
-                        for (idx_t k = 0; k < this->cf_config->num_negs; k++) {
 
-                            // id is the position in negative_partition
-                            idx_t id = uniform->read() + rank * part_size;
-
-                            //if the negative item and positive item are in the same partition, we need to resample
-                            while (col_map[negative_partition[id]] / num_sub_epochs == cur_parition / num_sub_epochs) {
-                                id = uniform->read() + rank * part_size;
-                                //std::cout << "resample" << id <<std::endl;
-                                //std::cout << col_map[negative_partition[id]]  << " " << cur_parition << std::endl;
-                            }
-                            neg_ids[k] = id;
-                        }
 
                         // determine the range of negative items
 
@@ -246,9 +236,23 @@ namespace cf {
                             pos_id = iter.second;
                             count ++;
                             // sample negative items to neg_ids
+                            for (idx_t k = 0; k < this->cf_config->num_negs; k++) {
+
+                                // id is the position in negative_partition
+                                idx_t id = uniform->read() + rank * part_size;
+
+                                //if the negative item and positive item are in the same partition, we need to resample
+                                while (col_map[negative_partition[id]] / num_sub_epochs == cur_parition / num_sub_epochs) {
+                                    id = uniform->read() + rank * part_size;
+                                    //std::cout << "resample" << id <<std::endl;
+                                    //std::cout << col_map[negative_partition[id]]  << " " << cur_parition << std::endl;
+                                }
+                                neg_ids[k] = id;
+                            }
 
                             local_loss += this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
                                                                         thread_buffer, &behavior_aggregator);
+
                         }
 
                         //std::cout << "finish sampling positive items" << std::endl;
@@ -257,8 +261,9 @@ namespace cf {
                         /*for (int k = 0; k < total_cols; k++) {
                             printf("col_map[%lu]=%lu from process %d\n", shared_data[k], col_map[shared_data[k]], rank);
                         }*/
-                        std::cout << this->model->item_embedding->num_embs << " " << this->model->item_embedding->emb_dim << std::endl;
                         // synchronize item_embedding_weights for positive items
+
+
                         for (idx_t k = part_start; k < part_end; k++) {
                             idx_t col_id = shared_data[k];  // col id
                             idx_t col_group = col_map[col_id];  // col group
@@ -285,8 +290,19 @@ namespace cf {
                             delete[] tmp_weights;
                         }
 
-                        std::cout << "finished synchronize" << std::endl;
+                        // get the average of weights in different processors
+                        MPI_Allreduce((void *) aggregator_weights_ptr->weights0.data(), (void *) global_weights0, dim * dim,
+                                      MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+                        for (idx_t i = 0; i < dim * dim; ++i) {
+                            global_weights0[i] /= world_size;
+                        }
+
+
+                        //std::cout << "finished sub-sub-epoch:" << j << std::endl;
                         delete uniform;
+                        delete thread_buffer;
+                        delete negative_sampler;
+                        //std::cout << local_loss << std::endl;
                     }
 
 
@@ -346,19 +362,7 @@ namespace cf {
                     // this->cf_modules->optimizer->dense_step(this->model->item_embedding);
                     this->model->item_embedding->zero_grad();
 
-                    auto end = std::chrono::steady_clock::now();
-                    double epoch_time =
-                            std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() * 1.e-9;
-                    std::cout << "epoch time: " << epoch_time << " s " << std::endl;
 
-                    // get the average of weights in different processors
-                    MPI_Allreduce((void *) aggregator_weights_ptr->weights0.data(), (void *) global_weights0, dim * dim,
-                                  MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
-                    for (idx_t i = 0; i < dim * dim; ++i) {
-                        global_weights0[i] /= world_size;
-                    }
-
-                    std::cout << "start synchronize aggregator weights" << std::endl;
 
                     idx_t emb_dim = this->cf_config->emb_dim;
                     auto * global_item_embedding = new val_t[emb_dim];
@@ -373,7 +377,19 @@ namespace cf {
                         }
                         this->model->item_embedding->write_weights(i,global_item_embedding);
                     }
+                    delete [] global_item_embedding;
+                    delete [] item_embedding;
                 }
+
+                // get the average of weights in different processors
+                MPI_Allreduce((void *) aggregator_weights_ptr->weights0.data(), (void *) global_weights0, dim * dim,
+                              MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+                for (idx_t i = 0; i < dim * dim; ++i) {
+                    global_weights0[i] /= world_size;
+                }
+                Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
+                        global_weights0, dim, dim);
+                aggregator_weights_ptr->weights0 = global_weight_mat;
 
                 this->epoch += 1;
                 idx_t total_iterations;
@@ -381,7 +397,15 @@ namespace cf {
                 MPI_Allreduce((void *) &num_iterations, (void *) &total_iterations, 1, MPI_UINT64_T, MPI_SUM,
                               MPI_COMM_WORLD);
                 global_loss /= total_iterations;
+                std::cout << "Total iterations: " << total_iterations << std::endl;
+                auto end = std::chrono::steady_clock::now();
+                double epoch_time =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() * 1.e-9;
+                std::cout << "epoch time: " << epoch_time << " s " << std::endl;
                 std::cout << "epoch " << this->epoch << " loss " << global_loss << std::endl;
+                delete [] global_weights0;
+                delete [] shared_data;
+                delete [] negative_partition;
                 return global_loss;
             }
 

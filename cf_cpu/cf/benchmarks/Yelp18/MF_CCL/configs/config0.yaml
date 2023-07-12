@@ -24,5 +24,5 @@ model_config:
     net_regularizer: 0
     net_dropout: 0
     epochs: 8
-    eval_interval: 10
+    eval_interval: 2
     seed: 2022
