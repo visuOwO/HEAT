@@ -2,9 +2,25 @@
 #include <mpi.h>
 #include <set>
 
+static size_t totalMemoryUsed = 0;
+
+void * operator new(size_t size) {
+    totalMemoryUsed += size;
+    return malloc(size);
+}
+
+void operator delete(void* memory, size_t size)
+{
+    totalMemoryUsed -= size;
+    free(memory);
+}
+
 namespace cf {
     namespace modules {
         namespace train {
+
+
+
 
             Engine::Engine(std::shared_ptr<datasets::Dataset> train_data,
                            std::shared_ptr<behavior_aggregators::AggregatorWeights> aggregator_weights,
@@ -64,12 +80,100 @@ namespace cf {
                 }
             }
 
+            val_t Engine::origin_train_one_epoch() {
+                auto start = std::chrono::steady_clock::now();
+
+                const idx_t iterations = this->train_data->data_rows;
+                idx_t num_negs = this->cf_config->num_negs;
+                double loss = 0.;
+                idx_t max_threads = omp_get_max_threads();
+                datasets::Dataset* train_data_ptr = this->train_data.get();
+                // this->positive_sampler->shuffle();
+                behavior_aggregators::AggregatorWeights* aggregator_weights_ptr = this->aggregator_weights.get();
+                if (this->cf_config->milestones.size() > 1)
+                {
+                    this->cf_modules->optimizer->scheduler_multi_step_lr(this->epoch, this->cf_config->milestones, 0.1);
+                }
+                else
+                {
+                    this->cf_modules->optimizer->scheduler_step_lr(this->epoch, this->cf_config->milestones[0], 0.1);
+                }
+
+                Eigen::initParallel();
+// #pragma omp parallel reduction(+ : loss) shared(train_data_ptr, aggregator_weights_ptr)
+#pragma omp parallel reduction(+ : loss)
+                {
+                    idx_t user_id = 0;
+                    idx_t pos_id = 0;
+                    std::vector<idx_t> neg_ids(num_negs);
+                    idx_t num_threads = omp_get_num_threads();
+                    idx_t thread_id = omp_get_thread_num();
+                    // idx_t seed = (this->epoch + 1) * thread_id + this->random_gen->read();
+                    idx_t seed = (this->epoch + 1) * thread_id;
+
+                    negative_samplers::NegativeSampler* negative_sampler = nullptr;
+                    if (this->cf_config->neg_sampler == 1)
+                    {
+                        negative_sampler = static_cast<negative_samplers::NegativeSampler*>(
+                                new negative_samplers::RandomTileNegativeSampler(this->cf_config, seed));
+                    }
+                    else
+                    {
+                        negative_sampler = static_cast<negative_samplers::NegativeSampler*>(
+                                new negative_samplers::UniformRandomNegativeSampler(this->cf_config, seed));
+                    }
+
+                    memory::ThreadBuffer* t_buf = new memory::ThreadBuffer(this->cf_config->emb_dim, num_negs);
+
+                    // behavior_aggregators::BehaviorAggregator* behavior_aggregator = nullptr;
+                    behavior_aggregators::BehaviorAggregator behavior_aggregator(train_data_ptr, aggregator_weights_ptr, cf_config);
+
+#pragma omp master
+                    {
+                        std::cout << "iterations " << iterations << " max_threads " << num_threads << std::endl;
+                    }
+
+// #pragma omp for schedule(dynamic, 4)
+// for (idx_t i = 0; i < 16; ++i)
+#pragma omp for schedule(dynamic, 512)
+                    for (idx_t i = 0; i < iterations; ++i)
+                    {
+                        double start_time = omp_get_wtime();
+                        idx_t train_data_idx = this->positive_sampler->read(i);
+                        this->train_data->read_user_item(train_data_idx, user_id, pos_id);
+                        negative_sampler->ignore_pos_sampling(user_id, pos_id, neg_ids);
+                        // negative_sampler->sampling(neg_ids);
+                        double end_time = omp_get_wtime();
+                        t_buf->time_map["data"] = t_buf->time_map["data"] + (end_time - start_time);
+
+                        auto tmp = this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules, t_buf, &behavior_aggregator);
+                        loss += tmp;
+                        std::cout << "loss: " << tmp << std::endl;
+                    }
+                    // performance_breakdown(t_buf);
+                }
+
+                // this->cf_modules->optimizer->dense_step(this->model->user_embedding);
+                this->model->user_embedding->zero_grad();
+                // this->cf_modules->optimizer->dense_step(this->model->item_embedding);
+                this->model->item_embedding->zero_grad();
+
+                auto end = std::chrono::steady_clock::now();
+                double epoch_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() * 1.e-9;
+                std::cout << "epoch time: " << epoch_time << " s " << std::endl;
+
+                this->epoch += 1;
+                loss /= iterations;
+                return loss;
+            }
+
             val_t Engine::train_one_epoch() {
                 int rank;
                 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
                 int world_size;
                 MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
+                //return this->origin_train_one_epoch();
 
                 const idx_t num_sub_epochs = this->cf_config->num_subepochs;
 
@@ -86,7 +190,7 @@ namespace cf {
                 // the shared memory is used to partition the columns of the embedding matrix
                 // this is not good, we need to store this sequence in all processes
                 idx_t *shared_data;
-                idx_t *negative_partition;
+                idx_t * negative_partition;
 
                 shared_data = new idx_t[total_cols];
                 negative_partition = new idx_t[total_cols];
@@ -152,7 +256,7 @@ namespace cf {
                 }
 
 
-                std::copy(local_weights0, local_weights0 + dim * dim, global_weights0);
+                //std::copy(local_weights0, local_weights0 + dim * dim, global_weights0);
                 if (this->cf_config->milestones.size() > 1) {
                     this->cf_modules->optimizer->scheduler_multi_step_lr(this->epoch, this->cf_config->milestones, 0.1);
                 } else {
@@ -164,10 +268,8 @@ namespace cf {
                 // the first level
                 // select one partition from the shared_data
                 for (int sub_epoch = 0; sub_epoch < num_sub_epochs; sub_epoch++) {
+                    std::cout << "before sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                     //std::cout << "sub_epoch: " << sub_epoch << std::endl;
-
-
-                    local_loss = 0.;
 
                     idx_t num_col_sub_epoch = total_cols / num_sub_epochs;
                     idx_t r = total_cols % num_sub_epochs;
@@ -183,10 +285,10 @@ namespace cf {
                     for (idx_t j = 0; j < world_size; j++) {
 
                         //sync aggregator_weights
-                        Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
+                        /*Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
                                 global_weights0, dim, dim);
-                        aggregator_weights_ptr->weights0 = global_weight_mat;
-
+                        aggregator_weights_ptr->weights0 = global_weight_mat;*/
+                        std::cout << "before sub-sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                         // Currently version without support of OpenMP
                         idx_t user_id = 0;
                         idx_t pos_id = 0;
@@ -240,7 +342,6 @@ namespace cf {
 
                                 // id is the position in negative_partition
                                 idx_t id = uniform->read() + rank * part_size;
-
                                 //if the negative item and positive item are in the same partition, we need to resample
                                 while (col_map[negative_partition[id]] / num_sub_epochs == cur_parition / num_sub_epochs) {
                                     id = uniform->read() + rank * part_size;
@@ -249,10 +350,10 @@ namespace cf {
                                 }
                                 neg_ids[k] = id;
                             }
-
-                            local_loss += this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
+                            auto tmp =  this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
                                                                         thread_buffer, &behavior_aggregator);
-
+                            //std::cout << "loss at process "<< rank << " is: " << tmp << std::endl;
+                            local_loss += tmp;
                         }
 
                         //std::cout << "finish sampling positive items" << std::endl;
@@ -264,7 +365,7 @@ namespace cf {
                         // synchronize item_embedding_weights for positive items
 
 
-                        for (idx_t k = part_start; k < part_end; k++) {
+                        /*for (idx_t k = part_start; k < part_end; k++) {
                             idx_t col_id = shared_data[k];  // col id
                             idx_t col_group = col_map[col_id];  // col group
                             int src = col_group % world_size + j;  // src processor
@@ -295,7 +396,7 @@ namespace cf {
                                       MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
                         for (idx_t i = 0; i < dim * dim; ++i) {
                             global_weights0[i] /= world_size;
-                        }
+                        }*/
 
 
                         //std::cout << "finished sub-sub-epoch:" << j << std::endl;
@@ -303,6 +404,8 @@ namespace cf {
                         delete thread_buffer;
                         delete negative_sampler;
                         //std::cout << local_loss << std::endl;
+                        //std::cout << "memory used: " << totalMemoryUsed << std::endl;
+                        std::cout << "end sub-sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                     }
 
 
@@ -367,7 +470,7 @@ namespace cf {
                     idx_t emb_dim = this->cf_config->emb_dim;
                     auto * global_item_embedding = new val_t[emb_dim];
                     auto * item_embedding = new val_t[emb_dim];
-                    for (idx_t i = 0; i < this->train_data->data_cols; ++i) {
+                    /*for (idx_t i = 0; i < this->train_data->data_cols; ++i) {
 
                         this->model->item_embedding->read_weights(i,item_embedding);
                         MPI_Allreduce((void *) item_embedding, (void *) global_item_embedding, emb_dim,
@@ -376,20 +479,21 @@ namespace cf {
                             global_item_embedding[j] /= world_size;
                         }
                         this->model->item_embedding->write_weights(i,global_item_embedding);
-                    }
+                    }*/
                     delete [] global_item_embedding;
                     delete [] item_embedding;
+                    std::cout << "end sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                 }
 
                 // get the average of weights in different processors
-                MPI_Allreduce((void *) aggregator_weights_ptr->weights0.data(), (void *) global_weights0, dim * dim,
+                /*MPI_Allreduce((void *) aggregator_weights_ptr->weights0.data(), (void *) global_weights0, dim * dim,
                               MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
                 for (idx_t i = 0; i < dim * dim; ++i) {
                     global_weights0[i] /= world_size;
                 }
                 Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
                         global_weights0, dim, dim);
-                aggregator_weights_ptr->weights0 = global_weight_mat;
+                aggregator_weights_ptr->weights0 = global_weight_mat;*/
 
                 this->epoch += 1;
                 idx_t total_iterations;

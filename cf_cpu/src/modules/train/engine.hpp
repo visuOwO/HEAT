@@ -33,6 +33,7 @@ class Engine
 
     ~Engine() = default;
     val_t train_one_epoch();
+    val_t origin_train_one_epoch();
     void performance_breakdown(memory::ThreadBuffer* t_buf);
     void evaluate0();
     // void evaluate1();
