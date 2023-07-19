@@ -20,6 +20,11 @@ else()
 endif()
 
 find_package(MPI REQUIRED)
+
+if (${MPI_C_VERSION} VERSION_LESS 3.0)
+  message(FATAL_ERROR "MPI version must be at least 3.0")
+endif()
+
 include_directories(${MPI_INCLUDE_PATH})
 
 
@@ -53,7 +58,7 @@ add_subdirectory(extern/pybind11)
 file(GLOB PYBIND_SOURCES src/pybind/*.cpp)
 pybind11_add_module(cf_c MODULE ${PYBIND_SOURCES})
 target_link_libraries(cf_c PUBLIC cf)
-target_link_libraries(cf_c PUBLIC mpi)
+target_link_libraries(cf_c PUBLIC ${MPI_LIBRARIES})
 
 set_target_properties(cf_c PROPERTIES CXX_VISIBILITY_PRESET "hidden" 
                           CUDA_VISIBILITY_PRESET "hidden")

@@ -2,7 +2,7 @@
 #include <mpi.h>
 #include <set>
 
-static size_t totalMemoryUsed = 0;
+/*static size_t totalMemoryUsed = 0;
 
 void * operator new(size_t size) {
     totalMemoryUsed += size;
@@ -13,15 +13,11 @@ void operator delete(void* memory, size_t size)
 {
     totalMemoryUsed -= size;
     free(memory);
-}
+}*/
 
 namespace cf {
     namespace modules {
         namespace train {
-
-
-
-
             Engine::Engine(std::shared_ptr<datasets::Dataset> train_data,
                            std::shared_ptr<behavior_aggregators::AggregatorWeights> aggregator_weights,
                            std::shared_ptr<models::Model> model,
@@ -81,6 +77,11 @@ namespace cf {
             }
 
             val_t Engine::origin_train_one_epoch() {
+                int rank;
+                MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+                int world_size;
+                MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+                //std::cout << "before sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                 auto start = std::chrono::steady_clock::now();
 
                 const idx_t iterations = this->train_data->data_rows;
@@ -148,7 +149,6 @@ namespace cf {
 
                         auto tmp = this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules, t_buf, &behavior_aggregator);
                         loss += tmp;
-                        std::cout << "loss: " << tmp << std::endl;
                     }
                     // performance_breakdown(t_buf);
                 }
@@ -164,6 +164,7 @@ namespace cf {
 
                 this->epoch += 1;
                 loss /= iterations;
+                //std::cout << "after sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                 return loss;
             }
 
@@ -172,6 +173,7 @@ namespace cf {
                 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
                 int world_size;
                 MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
 
                 //return this->origin_train_one_epoch();
 
@@ -267,8 +269,8 @@ namespace cf {
                 // each processor do the local training
                 // the first level
                 // select one partition from the shared_data
+                //std::cout << "before sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                 for (int sub_epoch = 0; sub_epoch < num_sub_epochs; sub_epoch++) {
-                    std::cout << "before sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                     //std::cout << "sub_epoch: " << sub_epoch << std::endl;
 
                     idx_t num_col_sub_epoch = total_cols / num_sub_epochs;
@@ -288,7 +290,7 @@ namespace cf {
                         /*Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
                                 global_weights0, dim, dim);
                         aggregator_weights_ptr->weights0 = global_weight_mat;*/
-                        std::cout << "before sub-sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
+                        //std::cout << "before sub-sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                         // Currently version without support of OpenMP
                         idx_t user_id = 0;
                         idx_t pos_id = 0;
@@ -329,8 +331,8 @@ namespace cf {
 
 
                         // determine the range of negative items
+                        std::cout << part_size << std::endl;
 
-                        //std::cout << "start sampling positive items" << std::endl;
                         int count = 0;
                         for (auto & iter : iters) {
                             //std::cout << count << std::endl;
@@ -355,8 +357,6 @@ namespace cf {
                             //std::cout << "loss at process "<< rank << " is: " << tmp << std::endl;
                             local_loss += tmp;
                         }
-
-                        //std::cout << "finish sampling positive items" << std::endl;
 
                         //std::cout << "start synchronize positive item embedding weights" << std::endl;
                         /*for (int k = 0; k < total_cols; k++) {
@@ -405,9 +405,9 @@ namespace cf {
                         delete negative_sampler;
                         //std::cout << local_loss << std::endl;
                         //std::cout << "memory used: " << totalMemoryUsed << std::endl;
-                        std::cout << "end sub-sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
+                        
                     }
-
+                    //std::cout << "end sub-sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
 
 // #pragma omp parallel reduction(+ : local_loss) shared(train_data_ptr, aggregator_weights_ptr)
 /* #pragma omp parallel reduction(+ : local_loss)
@@ -482,7 +482,7 @@ namespace cf {
                     }*/
                     delete [] global_item_embedding;
                     delete [] item_embedding;
-                    std::cout << "end sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
+                    //std::cout << "end sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
                 }
 
                 // get the average of weights in different processors
@@ -511,6 +511,17 @@ namespace cf {
                 delete [] shared_data;
                 delete [] negative_partition;
                 return global_loss;
+            }
+
+            val_t Engine::train_one_epoch_new() {
+                int rank, world_size;
+                MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+                MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+                //initialize shared memory for MPI
+                MPI_Comm shared_comm;
+                MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &shared_comm);
+
             }
 
             void Engine::evaluate0() {
