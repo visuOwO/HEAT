@@ -2,7 +2,9 @@
 #pragma once
 
 #include <cstring>
+#include <stdexcept>
 #include "../memory/array.hpp"
+
 
 namespace cf
 {
@@ -17,7 +19,7 @@ using ValArray = memory::Array<val_t>;
 class Embedding
 {
   public:
-    Embedding(idx_t num_embs, idx_t emb_dim, val_t* init_weights);
+    Embedding(idx_t num_embs, idx_t emb_dim, val_t* init_weights, idx_t start_idx, idx_t end_idx);
     ~Embedding() = default;
     val_t* read_weights(idx_t idx, val_t* weight_buf);
     void write_weights(idx_t idx, val_t* weight_buf);
@@ -29,6 +31,8 @@ class Embedding
     idx_t emb_dim;
     ValArray* weights;
     ValArray* grads;
+    idx_t start_idx;
+    idx_t end_idx;
 };
 
 }

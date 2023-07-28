@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include "matrix_factorization.hpp"
 
 namespace cf
@@ -12,8 +13,11 @@ MatrixFactorization::MatrixFactorization(const std::shared_ptr<CFConfig> config,
 {
 }
 
+
+
 val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::vector<idx_t>& neg_ids, 
-    const std::shared_ptr<CFModules> cf_modules, memory::ThreadBuffer* t_buf, behavior_aggregators::BehaviorAggregator* behavior_aggregator)
+    const std::shared_ptr<CFModules> cf_modules, memory::ThreadBuffer* t_buf, behavior_aggregators::BehaviorAggregator* behavior_aggregator,
+    std::unordered_map<idx_t, std::vector<val_t> > & remote_item_embeddings_grads)
 {
     double start_time = omp_get_wtime();
     double forward_time = start_time;
@@ -29,7 +33,17 @@ val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::ve
     memory::Array<val_t>* item_embedding_grads = this->item_embedding->grads;
 
     val_t* user_emb_ptr = user_embedding_weights->read_row(user_id, t_buf->user_emb_buf);
-    val_t* pos_emb_ptr = item_embedding_weights->read_row(pos_id, t_buf->pos_emb_buf);
+
+    // val_t* pos_emb_ptr = item_embedding_weights->read_row(pos_id, t_buf->pos_emb_buf);
+
+    val_t * pos_emb_ptr = t_buf->pos_emb_buf;
+
+
+    if (this->updated_item_embeddings_grads.find(t_buf->pos_item_ids[pos_id]) == this->updated_item_embeddings_grads.end())
+    {
+        remote_item_embeddings_grads.insert({pos_id, std::vector<val_t>(emb_dim, 0.0)});    // initialize gradients to 0
+    }
+
 
     double end_time = omp_get_wtime();
     t_buf->time_map["read_emb"] = t_buf->time_map["read_emb"] + (end_time - start_time);
@@ -69,11 +83,19 @@ val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::ve
     for (idx_t neg_idx = 0; neg_idx < num_negs; ++neg_idx)
     {
         idx_t neg_id = neg_ids[neg_idx];
-        val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id, t_buf->neg_emb_buf0);
-        memcpy(t_buf->neg_emb_buf1 + neg_idx * emb_dim, neg_emb_ptr, emb_dim * sizeof(val_t));
 
-        val_t* neg_grad_ptr = item_embedding_grads->read_row(neg_id, t_buf->neg_grad_buf);
-        Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb_grad(neg_grad_ptr, 1, emb_dim);
+        // TODO: read from buffer instead of reading from memory
+        // val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id, t_buf->neg_emb_buf0);
+        val_t* neg_emb_ptr = t_buf->neg_emb_buf0;
+
+        // memcpy(t_buf->neg_emb_buf1 + neg_idx * emb_dim, neg_emb_ptr, emb_dim * sizeof(val_t));
+
+        // read negative embedding from tiled memory
+        // maybe it's a waste of time to read from tiled memory, we can just use the embedding in the buffer
+        memcpy(t_buf->neg_emb_buf1 + neg_idx * emb_dim, t_buf->tiled_neg_emb_buf + neg_id * emb_dim, emb_dim * sizeof(val_t));
+
+        //val_t* neg_grad_ptr = item_embedding_grads->read_row(neg_id, t_buf->neg_grad_buf);
+        //Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb_grad(neg_grad_ptr, 1, emb_dim);
     }
     end_time = omp_get_wtime();
     t_buf->time_map["read_emb"] = t_buf->time_map["read_emb"] + (end_time - start_time);
@@ -116,7 +138,8 @@ val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::ve
     // Eigen::Array<val_t, 1, Eigen::Dynamic> loss_grad = score_mul * loss * (1.0 - loss);
 
     val_t* user_grad_ptr = user_embedding_grads->read_row(user_id, t_buf->user_grad_buf);
-    val_t* pos_grad_ptr = item_embedding_grads->read_row(pos_id, t_buf->pos_grad_buf);
+    //val_t* pos_grad_ptr = item_embedding_grads->read_row(pos_id, t_buf->pos_grad_buf);
+    val_t * pos_grad_ptr = this->updated_user_embeddings_grads[pos_id].data();
     Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> user_emb_grad(user_grad_ptr, 1, emb_dim);
     Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> pos_emb_grad(pos_grad_ptr, 1, emb_dim);
 
@@ -130,7 +153,12 @@ val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::ve
         // val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id, t_buf->neg_emb_buf0);
         // Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb(neg_emb_ptr, 1, emb_dim);
 
-        val_t* neg_grad_ptr = item_embedding_grads->read_row(neg_id, t_buf->neg_grad_buf);
+        //val_t* neg_grad_ptr = item_embedding_grads->read_row(neg_id, t_buf->neg_grad_buf);
+        if (updated_item_embeddings_grads.find(neg_id) == updated_item_embeddings_grads.end())
+        {
+            remote_item_embeddings_grads.insert({neg_id, std::vector<val_t>(emb_dim, 0.0)});    // initialize gradients to 0
+        }
+        val_t* neg_grad_ptr = this->updated_user_embeddings_grads[neg_id].data();
         Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb_grad(neg_grad_ptr, 1, emb_dim);
         
         val_t r_u3_n = 1 / (user_norm3 * neg_norm(0, neg_idx));
@@ -145,8 +173,9 @@ val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::ve
         // regularize negative embedding
         // neg_emb_grad += l2 * neg_embs.row(neg_idx);
         cf_modules->optimizer->sparse_step(neg_embs.row(neg_idx).data(), neg_grad_ptr);
-        item_embedding_weights->write_row(neg_id, neg_embs.row(neg_idx).data());
-        item_embedding_grads->write_row(neg_id, neg_grad_ptr);
+
+        // item_embedding_weights->write_row(neg_id, neg_embs.row(neg_idx).data());
+        // item_embedding_grads->write_row(neg_id, neg_grad_ptr);
     }
 
     behavior_aggregator->backward(user_grad_ptr);
@@ -166,12 +195,13 @@ val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::ve
     cf_modules->optimizer->sparse_step(user_emb_ptr, user_grad_ptr);
 
     // pos_emb_grad += l2 * pos_emb;
-    cf_modules->optimizer->sparse_step(pos_emb_ptr, pos_grad_ptr);
+    //cf_modules->optimizer->sparse_step(pos_emb_ptr, pos_grad_ptr);
 
     user_embedding_weights->write_row(user_id, user_emb_ptr);
     user_embedding_grads->write_row(user_id, user_grad_ptr);
-    item_embedding_weights->write_row(pos_id, pos_emb_ptr);
-    item_embedding_grads->write_row(pos_id, pos_grad_ptr);
+    //item_embedding_weights->write_row(pos_id, pos_emb_ptr);
+    //item_embedding_grads->write_row(pos_id, pos_grad_ptr);
+
 
     end_time = omp_get_wtime();
     t_buf->time_map["backward"] = t_buf->time_map["backward"] + (end_time - backward_time);

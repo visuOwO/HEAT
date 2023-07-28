@@ -21,7 +21,7 @@ class Shuffle
             {
                 this->indices[i] = i;
             }
-            // this->shuffle();
+            // this->Data_shuffle();
         }
 
         ~Shuffle()

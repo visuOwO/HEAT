@@ -108,7 +108,7 @@ class ClickDataset(Dataset):
 
 
 class SubClickDataset(Dataset):
-    def __init__(self, parent_dataset, start, end, rank=None):
+    def __init__(self, parent_dataset, start, end, col_start, col_end, rank=None):
         super().__init__()
         self.click_dataset = None
 
@@ -127,6 +127,8 @@ class SubClickDataset(Dataset):
         self.num_users = 0
         self.num_items = 0
         self.rank = rank
+        self.col_start = col_start
+        self.col_end = col_end
 
         for user_id in self.user_items_dic:
             items = self.user_items_dic[user_id]

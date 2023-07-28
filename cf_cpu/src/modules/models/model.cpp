@@ -11,6 +11,7 @@ Model::Model(const std::shared_ptr<CFConfig> config, val_t* user_weights, val_t*
 {
     this->user_embedding = new embeddings::Embedding(config->num_users, config->emb_dim, user_weights);
     this->item_embedding = new embeddings::Embedding(config->num_items, config->emb_dim, item_weights);
+    this->iterations = 0;
 }
 
 val_t* Model::read_embedding(embeddings::Embedding* embedding, idx_t idx, val_t* emb_buf)

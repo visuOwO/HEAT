@@ -16,7 +16,8 @@ class MatrixFactorization : public Model
     ~MatrixFactorization() = default;
 
     val_t forward_backward(idx_t user_id, idx_t pos_id, std::vector<idx_t>& neg_ids, 
-        const std::shared_ptr<CFModules> cf_modules, memory::ThreadBuffer* t_buf, behavior_aggregators::BehaviorAggregator* behavior_aggregator) override;
+        const std::shared_ptr<CFModules> cf_modules, memory::ThreadBuffer* t_buf, behavior_aggregators::BehaviorAggregator* behavior_aggregator,
+        std::unordered_map<idx_t, std::vector<val_t> > &) override;
 };
 
 }

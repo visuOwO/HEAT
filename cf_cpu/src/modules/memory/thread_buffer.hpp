@@ -15,19 +15,22 @@ namespace memory
 
 struct ThreadBuffer
 {
-    ThreadBuffer(idx_t emb_dim, idx_t num_negs)
+    ThreadBuffer(idx_t emb_dim, idx_t num_negs, idx_t refresh_interval, idx_t tile_size)
     {
         this->emb_dim = emb_dim;
         this->num_negs = num_negs;
 
         user_emb_buf = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
         user_grad_buf = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
-        pos_emb_buf = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
         pos_grad_buf = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
         neg_emb_buf0 = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
         neg_emb_buf1 = static_cast<val_t*>(splatt_malloc(num_negs * emb_dim * sizeof(val_t)));
         // neg_grad_buf = static_cast<val_t*>(splatt_malloc(num_negs * emb_dim * sizeof(val_t)));
         neg_grad_buf = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
+        tiled_neg_emb_buf = static_cast<val_t*>(splatt_malloc(tile_size * emb_dim * sizeof(val_t)));
+        pos_item_ids = static_cast<idx_t*>(splatt_malloc(refresh_interval * sizeof(idx_t)));   // this should be the batch size, not tile size
+        pos_emb_buf = static_cast<val_t*>(splatt_malloc(refresh_interval * emb_dim * sizeof(val_t)));   // positive
+
 
         time_map["data"] = 0.0;
         time_map["f_b"] = 0.0; // forward_backward
@@ -56,6 +59,8 @@ struct ThreadBuffer
         splatt_free(pos_emb_buf);
         splatt_free(neg_emb_buf0);
         splatt_free(neg_emb_buf1);
+        splatt_free(tiled_neg_emb_buf);
+        splatt_free(pos_item_ids);
         time_map.clear();
     }
 
@@ -68,6 +73,8 @@ struct ThreadBuffer
     val_t* neg_emb_buf0;
     val_t* neg_emb_buf1;
     val_t* neg_grad_buf;
+    val_t* tiled_neg_emb_buf;
+    idx_t* pos_item_ids;
 
     std::map<std::string, double> time_map;
 };
