@@ -84,7 +84,6 @@ val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::ve
     {
         idx_t neg_id = neg_ids[neg_idx];
 
-        // TODO: read from buffer instead of reading from memory
         // val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id, t_buf->neg_emb_buf0);
         val_t* neg_emb_ptr = t_buf->neg_emb_buf0;
 
