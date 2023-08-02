@@ -22,7 +22,7 @@ namespace cf {
             ~Data_shuffle() = default;
 
             template<class T>
-            static void shuffle_data(T *send_data, std::vector<idx_t> &cols, idx_t dst_rank, T *recv_data,
+            static void shuffle_grad(T *send_data, std::vector<idx_t> &cols, idx_t dst_rank, T *recv_data,
                                      std::vector<idx_t> &recv_cols);
 
 
@@ -33,7 +33,7 @@ namespace cf {
                                      embeddings::Embedding *item_embeddings);
 
             template<class T>
-                    static void request_data(T* requested_data, std::vector<idx_t> &cols, idx_t dst_rank, embeddings::Embedding * item_embeddings);
+                    static void request_data(T* requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank, embeddings::Embedding * item_embeddings);
 
 
             static idx_t *process_status;
