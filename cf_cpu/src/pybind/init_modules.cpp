@@ -67,23 +67,28 @@ void init_models(py::module_ &modules_module) {
     py::module_ models_module = modules_module.def_submodule("models", "models");
 
     py::class_<cf::modules::models::Model,
-            std::shared_ptr<cf::modules::models::Model>>(models_module, "Model");
+            std::shared_ptr<cf::modules::models::Model>> give_me_a_name(models_module, "Model");
 
     py::class_<cf::modules::models::MatrixFactorization,
             cf::modules::models::Model,
             std::shared_ptr<cf::modules::models::MatrixFactorization>>(models_module, "MatrixFactorization")
             .def(py::init<>([](const std::shared_ptr<cf::modules::CFConfig> cf_config,
                                py::array_t<val_t, py::array::c_style> &user_weights,
-                               py::array_t<val_t, py::array::c_style> &item_weights) {
+                               py::array_t<val_t, py::array::c_style> &item_weights,
+                               idx_t start_item_id,
+                               idx_t end_item_id
+                               ) {
                      //  idx_t user_weights_rows = click_dataset.shape()[0];
                      //  idx_t user_weights_cols = click_dataset.shape()[1];
                      auto user_weights_ptr = static_cast<val_t *>(user_weights.request().ptr);
                      auto item_weights_ptr = static_cast<val_t *>(item_weights.request().ptr);
-                     return cf::modules::models::MatrixFactorization(cf_config, user_weights_ptr, item_weights_ptr);
+                     return cf::modules::models::MatrixFactorization(cf_config, user_weights_ptr, item_weights_ptr, start_item_id, end_item_id);
                  }),
                  py::arg("cf_config"),
                  py::arg("user_weights"),
-                 py::arg("item_weights"));
+                 py::arg("item_weights"),
+                 py::arg("start_item_id"),
+                 py::arg("end_item_id"));
 
     // .def_readwrite("var", &cf::modules::models::MatrixFactorization::var);
 }

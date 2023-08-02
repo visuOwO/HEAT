@@ -77,95 +77,6 @@ namespace cf {
                 }
             }
 
-            val_t Engine::origin_train_one_epoch() {
-                int rank;
-                MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-                int world_size;
-                MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-                //std::cout << "before sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
-                auto start = std::chrono::steady_clock::now();
-
-                const idx_t iterations = this->train_data->data_rows;
-                idx_t num_negs = this->cf_config->num_negs;
-                double loss = 0.;
-                idx_t max_threads = omp_get_max_threads();
-                datasets::Dataset *train_data_ptr = this->train_data.get();
-                // this->positive_sampler->Data_shuffle();
-                behavior_aggregators::AggregatorWeights *aggregator_weights_ptr = this->aggregator_weights.get();
-                if (this->cf_config->milestones.size() > 1) {
-                    this->cf_modules->optimizer->scheduler_multi_step_lr(this->epoch, this->cf_config->milestones, 0.1);
-                } else {
-                    this->cf_modules->optimizer->scheduler_step_lr(this->epoch, this->cf_config->milestones[0], 0.1);
-                }
-
-                Eigen::initParallel();
-// #pragma omp parallel reduction(+ : loss) shared(train_data_ptr, aggregator_weights_ptr)
-#pragma omp parallel reduction(+ : loss)
-                {
-                    idx_t user_id = 0;
-                    idx_t pos_id = 0;
-                    std::vector<idx_t> neg_ids(num_negs);
-                    idx_t num_threads = omp_get_num_threads();
-                    idx_t thread_id = omp_get_thread_num();
-                    // idx_t seed = (this->epoch + 1) * thread_id + this->random_gen->read();
-                    idx_t seed = (this->epoch + 1) * thread_id;
-
-                    negative_samplers::NegativeSampler *negative_sampler = nullptr;
-                    if (this->cf_config->neg_sampler == 1) {
-                        negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
-                                new negative_samplers::RandomTileNegativeSampler(this->cf_config, seed));
-                    } else {
-                        negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
-                                new negative_samplers::UniformRandomNegativeSampler(this->cf_config, seed));
-                    }
-
-                    memory::ThreadBuffer *t_buf = new memory::ThreadBuffer(this->cf_config->emb_dim, num_negs,
-                                                                           this->cf_config->refresh_interval,
-                                                                           this->cf_config->tile_size);
-
-                    // behavior_aggregators::BehaviorAggregator* behavior_aggregator = nullptr;
-                    behavior_aggregators::BehaviorAggregator behavior_aggregator(train_data_ptr, aggregator_weights_ptr,
-                                                                                 cf_config);
-
-#pragma omp master
-                    {
-                        std::cout << "iterations " << iterations << " max_threads " << num_threads << std::endl;
-                    }
-
-// #pragma omp for schedule(dynamic, 4)
-// for (idx_t i = 0; i < 16; ++i)
-#pragma omp for schedule(dynamic, 512)
-                    for (idx_t i = 0; i < iterations; ++i) {
-                        double start_time = omp_get_wtime();
-                        idx_t train_data_idx = this->positive_sampler->read(i);
-                        this->train_data->read_user_item(train_data_idx, user_id, pos_id);
-                        negative_sampler->ignore_pos_sampling(user_id, pos_id, neg_ids);
-                        // negative_sampler->sampling(neg_ids);
-                        double end_time = omp_get_wtime();
-                        t_buf->time_map["data"] = t_buf->time_map["data"] + (end_time - start_time);
-
-                        auto tmp = this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules, t_buf,
-                                                                 &behavior_aggregator);
-                        loss += tmp;
-                    }
-                    // performance_breakdown(t_buf);
-                }
-
-                // this->cf_modules->optimizer->dense_step(this->model->user_embedding);
-                this->model->user_embedding->zero_grad();
-                // this->cf_modules->optimizer->dense_step(this->model->item_embedding);
-                this->model->item_embedding->zero_grad();
-
-                auto end = std::chrono::steady_clock::now();
-                double epoch_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() * 1.e-9;
-                std::cout << "epoch time: " << epoch_time << " s " << std::endl;
-
-                this->epoch += 1;
-                loss /= iterations;
-                //std::cout << "after sub epoch: " << totalMemoryUsed << " from process " << rank << std::endl;
-                return loss;
-            }
-
             val_t Engine::train_one_epoch() {
                 int rank;
                 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -354,8 +265,9 @@ namespace cf {
                                 }
                                 neg_ids[k] = id;
                             }
+                            std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
                             auto tmp = this->model->forward_backward(user_id, pos_id, neg_ids, this->cf_modules,
-                                                                     thread_buffer, &behavior_aggregator);
+                                                                     thread_buffer, &behavior_aggregator, emb_grads);
                             //std::cout << "loss at process "<< rank << " is: " << tmp << std::endl;
                             local_loss += tmp;
                         }
@@ -634,9 +546,9 @@ namespace cf {
                         }
 
                     }
-
+                    std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
                     loss += this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
-                                                          this->cf_modules, t_buf, &behavior_aggregator);
+                                                          this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
                     if (i % this->cf_config->train_size == 0) {
                         // update the global aggregator weights from local gradients
                         val_t *data = behavior_aggregator.weights0_grad_accu.data();
