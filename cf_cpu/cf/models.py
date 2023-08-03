@@ -8,6 +8,7 @@ import cf_c
 
 class Model(CPPBase, nn.Module):
     def __init__(self, config, col_start, col_end, embedding_initializer="lambda w: nn.init.normal_(w, std=1e-4)"):
+        print(col_start, col_end)
         super().__init__()
         nn.Module.__init__(self)
 

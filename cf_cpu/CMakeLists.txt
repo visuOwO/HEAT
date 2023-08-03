@@ -10,7 +10,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 
 add_definitions(-DSPLATT_VAL_TYPEWIDTH=32)
 
-find_package(OpenMP)
+find_package(OpenMP REQUIRED)
 if(${OPENMP_FOUND})
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
@@ -52,11 +52,14 @@ find_package(Eigen3 REQUIRED)
 set(EIGEN3_INCLUDE_DIR extern/eigen)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-add_library(cf ${CF_SOURCES} src/modules/utils/Data_shuffle.cpp src/modules/utils/Data_shuffle.h)
+add_library(cf ${CF_SOURCES})
+
+add_library(shuffle ${CMAKE_SOURCE_DIR}/src/modules/utils/Data_shuffle.cpp)
 
 add_subdirectory(extern/pybind11)
 file(GLOB PYBIND_SOURCES src/pybind/*.cpp)
 pybind11_add_module(cf_c MODULE ${PYBIND_SOURCES})
+target_link_libraries(cf_c PUBLIC shuffle)
 target_link_libraries(cf_c PUBLIC cf)
 target_link_libraries(cf_c PUBLIC ${MPI_LIBRARIES})
 

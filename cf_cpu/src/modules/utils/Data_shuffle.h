@@ -36,7 +36,7 @@ namespace cf {
                     static void request_data(T* requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank, embeddings::Embedding * item_embeddings);
 
 
-            static idx_t *process_status;
+            static idx_t * process_status;
             static idx_t total_cols;
             static idx_t emb_dim;
 

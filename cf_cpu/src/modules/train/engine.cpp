@@ -18,6 +18,13 @@ void operator delete(void* memory, size_t size)
 
 namespace cf {
     namespace modules {
+        idx_t * Data_shuffle::process_status;
+        idx_t Data_shuffle::total_cols;
+        idx_t Data_shuffle::emb_dim;
+        std::shared_ptr<CFModules> Data_shuffle::cf_modules;
+        MPI_Comm Data_shuffle::comm;
+        int Data_shuffle::rank;
+        int Data_shuffle::world_size;
         namespace train {
             Engine::Engine(std::shared_ptr<datasets::Dataset> train_data,
                            std::shared_ptr<behavior_aggregators::AggregatorWeights> aggregator_weights,
@@ -77,7 +84,7 @@ namespace cf {
                 }
             }
 
-            val_t Engine::train_one_epoch() {
+            val_t Engine::train_one_epoch_new() {
                 int rank;
                 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
                 int world_size;
@@ -426,7 +433,7 @@ namespace cf {
                 return global_loss;
             }
 
-            val_t Engine::train_one_epoch_new() {
+            val_t Engine::train_one_epoch() {
                 int rank, world_size;
                 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
                 MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -451,8 +458,10 @@ namespace cf {
 
                 // copy the shared memory to local memory
                 val_t *local_aggregator_weights;
+                local_aggregator_weights = new val_t[this->cf_config->emb_dim * this->cf_config->emb_dim];
                 memcpy(local_aggregator_weights, shared_aggregated_weights,
                        sizeof(val_t) * this->cf_config->emb_dim * this->cf_config->emb_dim);
+
 
                 MPI_Win_fence(0, win);
 
@@ -460,6 +469,7 @@ namespace cf {
                 idx_t *process_status;
                 MPI_Win_allocate_shared(sizeof(idx_t) * world_size, sizeof(idx_t),
                                         MPI_INFO_NULL, shared_comm, &process_status, &win2);
+
                 for (int i = 0; i < world_size; ++i) {
                     process_status[i] = 1;  // 1 means the process is still running
                 }
@@ -473,6 +483,8 @@ namespace cf {
                 Data_shuffle::cf_modules = this->cf_modules;
 
                 MPI_Win_fence(0, win2);
+
+
 
                 const idx_t iterations = this->train_data->data_rows;
                 double loss = 0.;
@@ -511,6 +523,8 @@ namespace cf {
                 // behavior_aggregators::BehaviorAggregator* behavior_aggregator = nullptr;
                 behavior_aggregators::BehaviorAggregator behavior_aggregator(train_data_ptr, aggregator_weights_ptr,
                                                                              cf_config);
+
+                std::cout << "start training" << std::endl;
 
                 for (idx_t i = 0; i < iterations; i++) {
                     idx_t train_data_idx = this->positive_sampler->read(i);
@@ -587,6 +601,8 @@ namespace cf {
                                                                      this->model->item_embedding);
                     }
                 }
+                delete[] local_aggregator_weights;
+                return loss;
             }
 
             void Engine::evaluate0() {

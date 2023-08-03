@@ -107,11 +107,19 @@ if __name__ == "__main__":
         sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
         test_data = sub_dataset
 
+    print('--- Finished loading data --- in ' + str(rank))
+
     aggregator_weights = AggregatorWeights(cf_config)
-    model = MatrixFactorization(cf_config)
+    print('--- Finished initializing aggregator weights ---')
+
+    model = MatrixFactorization(cf_config, train_data.col_start, train_data.col_end)
+    print('--- Finished initializing model ---')
+
     model.init_c_instance(cf_config)
 
     engine = Engine(train_data, aggregator_weights, model, cf_config)
+
+    print('--- Start training ---')
 
     eval_interval = model_config['eval_interval']
     for epoch in range(model_config['epochs']):
