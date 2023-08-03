@@ -503,7 +503,7 @@ namespace cf {
 
                 idx_t user_id = 0;
                 idx_t item_id = 0;
-                std::vector<idx_t> neg_ids;
+                std::vector<idx_t> neg_ids(num_negs);
                 idx_t seed = (this->epoch - 1) * this->train_data->data_rows;
 
                 // initialize nagative sampler
@@ -525,27 +525,36 @@ namespace cf {
                                                                              cf_config);
 
                 std::cout << "start training" << std::endl;
-
+                std::cout << typeid(*negative_sampler).name() << std::endl;
                 for (idx_t i = 0; i < iterations; i++) {
+                    std::cout << "iteration: " << i << std::endl;
                     idx_t train_data_idx = this->positive_sampler->read(i);
+                    std::cout << "train_data_idx: " << train_data_idx << std::endl;
                     this->train_data->read_user_item(train_data_idx, user_id, item_id);
+                    std::cout << "user_id: " << user_id << " item_id: " << item_id << std::endl;
                     negative_sampler->sampling(neg_ids);
+                    std::cout << "neg_ids: " << neg_ids[0] << " " << neg_ids[1] << " " << neg_ids[2] << std::endl;
                     if (i % this->cf_config->refresh_interval == 0) {
                         // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
                         // Fetch next positive embedding for the next batch
                         std::vector<idx_t> pos_ids(this->cf_config->refresh_interval);
                         for (int j = 0; j < this->cf_config->refresh_interval; j++) {
+                            std::cout << "i + j: " << i + j << std::endl;
                             idx_t id = this->positive_sampler->read(i + j);
                             idx_t uid, iid;
                             this->train_data->read_user_item(id, uid, iid);
                             t_buf->pos_item_ids[j] = iid;
                         }
 
+                        std::cout << "start shuffling embs" << std::endl;
+
                         // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                            this->cf_config->refresh_interval),
                                                    t_buf->pos_emb_buf,
                                                    this->model->item_embedding);
+
+                        std::cout << "start shuffling grads" << std::endl;
 
                         // assume that the negative sampler is random tile negative sampler
                         if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=

@@ -9,7 +9,7 @@ model_config:
     num_negs: 64
     max_his: 100
     embedding_dim: 128
-    neg_sampler: 0
+    neg_sampler: 1
     tile_size: 512
     refresh_interval: 8192
     embedding_dropout: 0
