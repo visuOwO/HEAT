@@ -539,7 +539,6 @@ namespace cf {
                         // Fetch next positive embedding for the next batch
                         std::vector<idx_t> pos_ids(this->cf_config->refresh_interval);
                         for (int j = 0; j < this->cf_config->refresh_interval; j++) {
-                            std::cout << "i + j: " << i + j << std::endl;
                             idx_t id = this->positive_sampler->read(i + j);
                             idx_t uid, iid;
                             this->train_data->read_user_item(id, uid, iid);
@@ -547,7 +546,6 @@ namespace cf {
                         }
 
                         std::cout << "start shuffling embs" << std::endl;
-
                         // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                            this->cf_config->refresh_interval),

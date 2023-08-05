@@ -13,10 +13,15 @@ Embedding::Embedding(idx_t num_embs, idx_t emb_dim, val_t* init_weights, idx_t s
     this->grads = new ValArray(num_embs, emb_dim, nullptr);
 
     this->num_embs = num_embs;
-    this->emb_dim = emb_dim;
+    this->emb_dim = emb_dim;    this->num_embs = num_embs;
+
+
+    printf("Embedding::Embedding: num_embs = %lu, emb_dim = %lu\n", num_embs, emb_dim);
 
     this->start_idx = start_idx;
     this->end_idx = end_idx;
+
+    printf("Embedding::Embedding: start_idx = %lu, end_idx = %lu\n", start_idx, end_idx);
 }
 
 val_t* Embedding::read_weights(idx_t idx, val_t* weight_buf)

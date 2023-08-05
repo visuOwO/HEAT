@@ -23,7 +23,7 @@ namespace models
 class Model
 {
   public:
-    Model(const std::shared_ptr<CFConfig> config, val_t* user_weights, val_t* item_weights, idx_t start_user_id, idx_t end_user_id);
+    Model(const std::shared_ptr<CFConfig> config, val_t* user_weights, val_t* item_weights, idx_t start_id, idx_t end_id);
     virtual ~Model() = default;
     val_t* read_embedding(embeddings::Embedding* embedding, idx_t idx, val_t* emb_buf);
     void write_embedding(embeddings::Embedding* embedding, idx_t idx, val_t* emb_buf);

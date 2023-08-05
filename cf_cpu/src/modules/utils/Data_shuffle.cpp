@@ -60,34 +60,58 @@ namespace cf {
                                         embeddings::Embedding *item_embeddings) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
+            std::cout << "total column is " << total_cols << std::endl;
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
+            std::cout << "k is " << k << std::endl;
+            std::cout << "r is " << r << std::endl;
+
+            //initialize the map
+            for (auto i = 0; i < world_size; i++) {
+                items_map[i] = std::vector<idx_t>();
+                idx_map[i] = std::vector<idx_t>();
+            }
+
             for (auto i = 0; i < items.size(); i++) {
                 idx_t idx = items[i];
                 idx_t part = idx / k;
                 if (idx - part * k < r) {
                     part++;
                 }
+                //printf("idx is %lu, part is %lu, rank is %d\n", idx, part, rank);
                 items_map[part].push_back(idx);
                 idx_map[part].push_back(i);
             }
+            for (auto i = 0; i < world_size; i++) {
+                std::cout << "rank " << i << " has " << items_map[i].size() << " items" << std::endl;
+            }
             std::vector<idx_t> cnts(world_size, 0);
             std::vector<val_t*> received_data(world_size, nullptr);
-            for (auto i = 0; i < world_size; i++) {
+            for (auto i = 1; i < world_size; i++) {
                 idx_t dst = rank ^ i;
-                val_t *recv_data = nullptr;
+                std::cout << "from " << rank << " to " << dst << std::endl;
+                auto *recv_data = new val_t[items_map[dst].size() * emb_dim];
                 std::vector<idx_t> recv_cols;
-                request_data(recv_data, items_map[i], dst, item_embeddings);
+                request_data(recv_data, items_map[dst], dst, item_embeddings);
                 for (auto j = 0; j < items_map[dst].size(); j++) {
                     memcpy(received_item_embeddings + idx_map[dst][j] * emb_dim, recv_data + j * emb_dim, emb_dim * sizeof(val_t));
                 }
                 delete[] recv_data;
             }
+
+            // copy local embeddings
+            for (auto i = 0; i < items_map[rank].size(); i++) {
+                idx_t idx = items_map[rank][i];
+                auto *updated_item_embeddings = new val_t[emb_dim];
+                item_embeddings->weights->read_row(idx, updated_item_embeddings);
+                memcpy(received_item_embeddings + idx_map[rank][i] * emb_dim, updated_item_embeddings, emb_dim * sizeof(val_t));
+                delete[] updated_item_embeddings;
+            }
         }
 
         // request data from other ranks
         template<class T>
-        void Data_shuffle::request_data(T *requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank,
+        void Data_shuffle::request_data(T *& requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank,
                                         embeddings::Embedding *item_embeddings) {
             idx_t requested_count = requested_cols.size();
             idx_t recv_count;
@@ -95,37 +119,49 @@ namespace cf {
                 MPI_Send((void *) &requested_count, 1, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) requested_cols.data(), requested_count, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Recv((void *) &recv_count, 1, MPI_UINT64_T, dst_rank, 0, comm, MPI_STATUS_IGNORE);
-                std::vector<val_t> recv_cols(recv_count);
+                std::vector<idx_t> recv_cols(recv_count);
                 MPI_Recv((void *) recv_cols.data(), recv_count, MPI_UINT64_T, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
 
+                printf("rank %d, recv_count is %lu\n", rank, recv_count);
                 // prepare send data
                 auto *send_data = new val_t[recv_count * emb_dim];
-                for (unsigned long i = 0; i < recv_count; i++) {
-                    item_embeddings->weights->read_row(requested_cols[i], send_data + i * emb_dim);
+                std::cout << recv_count << " " << rank << std::endl;
+                std::cout << "Test 0 " << rank << std::endl;
+                printf("start: %lu, end: %lu\n", item_embeddings->start_idx, item_embeddings->end_idx);
+                for (idx_t i = 0; i < recv_count; i++) {
+                    item_embeddings->weights->read_row(recv_cols[i]-item_embeddings->start_idx, send_data + i * emb_dim);
                 }
-
+                std::cout << "Test 1 " << rank << std::endl;
+                requested_data = new val_t[requested_count * emb_dim];
                 MPI_Send((void *) send_data, recv_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);
                 MPI_Recv((void *) requested_data, requested_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
+                std::cout << "Test 2 " << rank << std::endl;
                 delete[] send_data;
             } else {
                 MPI_Recv((void *) &recv_count, 1, MPI_UINT64_T, dst_rank, 0, comm, MPI_STATUS_IGNORE);
-                std::vector<val_t> recv_cols(recv_count);
+                std::vector<idx_t> recv_cols(recv_count);
                 MPI_Recv((void *) recv_cols.data(), recv_count, MPI_UINT64_T, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
 
                 MPI_Send((void *) &requested_count, 1, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) requested_cols.data(), requested_count, MPI_UINT64_T, dst_rank, 0, comm);
+                printf("rank %d, recv_count is %lu\n", rank, recv_count);
 
                 auto *send_data = new val_t[recv_count * emb_dim];
+                std::cout << recv_count << " " << rank << std::endl;
+                std::cout << "Test 0 " << rank << std::endl;
+                printf("start: %lu, end: %lu\n", item_embeddings->start_idx, item_embeddings->end_idx);
                 for (unsigned long i = 0; i < recv_count; i++) {
-                    item_embeddings->weights->read_row(requested_cols[i], send_data + i * emb_dim);
+                    item_embeddings->weights->read_row(requested_cols[i]-item_embeddings->start_idx, send_data + i * emb_dim);
                 }
-
+                std::cout << "Test 1 " << rank << std::endl;
+                requested_data = new val_t[requested_count * emb_dim];
                 MPI_Recv((void *) requested_data, requested_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
                 MPI_Send((void *) send_data, recv_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);
+                std::cout << "Test 2 " << rank << std::endl;
                 delete[] send_data;
             }
         }
