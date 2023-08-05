@@ -16,23 +16,30 @@ namespace cf {
         Data_shuffle::shuffle_and_update_item_grads(const std::vector<idx_t> &neg_items, val_t *neg_item_embeddings,
                                                     embeddings::Embedding *item_embeddings) {
             std::unordered_map<idx_t, std::vector<idx_t>> negs_map;
+            std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
-            for (auto &neg_item: neg_items) {
-                idx_t part = neg_item / k;
-                if (neg_item - part * k < r) {
+            for (idx_t i = 0; i < neg_items.size(); i++) {
+                idx_t part = neg_items[i] / k;
+                if (neg_items[i] - part * k < r) {
                     part++;
                 }
-                negs_map[part].push_back(neg_item);
+                negs_map[part].push_back(neg_items[i]);
+                idx_map[part].push_back(i);
             }
+
+            printf("rank %d: update local embeddings\n", rank);
 
             // update local embeddings
             for (auto i: negs_map[rank]) {
+                printf("rank %d: update local embeddings for item %lu\n", rank, i);
                 auto *updated_item_embeddings = new val_t[emb_dim];
-                item_embeddings->weights->read_row(i, updated_item_embeddings);
+                item_embeddings->weights->read_row(i-item_embeddings->start_idx, updated_item_embeddings);
                 cf_modules->optimizer->sparse_step(updated_item_embeddings, neg_item_embeddings + i * emb_dim);
-                item_embeddings->weights->write_row(i, updated_item_embeddings);
+                item_embeddings->weights->write_row(i-item_embeddings->start_idx, updated_item_embeddings);
             }
+
+            printf("rank %d: finish update local embeddings\n", rank);
 
             // shuffle and update embeddings from other ranks
             for (idx_t i = 1; i < world_size; i++) {
@@ -40,13 +47,20 @@ namespace cf {
                 val_t *recv_data = nullptr;
                 std::vector<idx_t> recv_cols;
                 shuffle_grad(neg_item_embeddings, negs_map[dst], dst, recv_data, recv_cols);
+                printf("rank %d: receive %lu columns from rank %lu\n", rank, recv_cols.size(), dst);
                 Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> recv_data_arr(
                         recv_data, recv_cols.size(), emb_dim);
-                for (unsigned long idx: recv_cols) {
+                for (idx_t j = 0; j < recv_cols.size(); j++) {
+                    printf("rank %d: update local embeddings for item %lu\n", rank, recv_cols[j]);
                     auto *updated_item_embeddings = new val_t[emb_dim];
-                    item_embeddings->weights->read_row(idx, updated_item_embeddings);
-                    cf_modules->optimizer->sparse_step(updated_item_embeddings, recv_data + idx * emb_dim);
-                    item_embeddings->weights->write_row(idx, updated_item_embeddings);
+                    item_embeddings->weights->read_row(recv_cols[j] - item_embeddings->start_idx, updated_item_embeddings);
+                    printf("finish reading item %lu from rank %d\n", recv_cols[j], rank);
+                    printf("%f\n", updated_item_embeddings[0]);
+                    printf("%f\n", *(recv_data+j*emb_dim));
+                    cf_modules->optimizer->sparse_step(updated_item_embeddings, recv_data + j * emb_dim);
+                    printf("finish updating item %lu from rank %d\n", recv_cols[j], rank);
+                    item_embeddings->weights->write_row(recv_cols[j] - item_embeddings->start_idx, updated_item_embeddings);
+                    printf("finish writing item %lu from rank %d\n", recv_cols[j], rank);
                     delete[] updated_item_embeddings;
                 }
                 delete[] recv_data;
@@ -171,14 +185,16 @@ namespace cf {
 
 
         template<class T>
-        void Data_shuffle::shuffle_grad(T *send_data, std::vector<idx_t> &cols, idx_t dst_rank, T *recv_data,
+        void Data_shuffle::shuffle_grad(T *send_data, std::vector<idx_t> &cols, idx_t dst_rank, T *&recv_data,
                                         std::vector<idx_t> &recv_cols) {
             idx_t send_count = cols.size();
             idx_t recv_count;
+            printf("rank %d, send_count is %lu\n", rank, send_count);
             if (rank < dst_rank) {
                 MPI_Send((void *) &send_count, 1, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) cols.data(), send_count, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) send_data, send_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);
+                printf("finish sending from rank %d\n", rank);
                 MPI_Recv((void *) &recv_count, 1, MPI_UINT64_T, dst_rank, 0, comm, MPI_STATUS_IGNORE);
                 recv_cols.resize(recv_count);
                 MPI_Recv((void *) recv_cols.data(), recv_count, MPI_UINT64_T, dst_rank, 0, comm,
@@ -192,6 +208,7 @@ namespace cf {
                 MPI_Recv((void *) recv_cols.data(), recv_count, MPI_UINT64_T, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
                 MPI_Recv((void *) recv_data, recv_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm, MPI_STATUS_IGNORE);
+                printf("finish receiving from rank %d\n", rank);
                 MPI_Send((void *) &send_count, 1, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) cols.data(), send_count, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) send_data, send_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);

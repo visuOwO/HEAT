@@ -558,6 +558,7 @@ namespace cf {
                         if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
                             nullptr) {
                             auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
+                            printf("start shuffling and updating grads\n");
                             for (int j = 0; j < this->cf_config->refresh_interval; j++) {
                                 Data_shuffle::shuffle_and_update_item_grads(neg_tile, t_buf->tiled_neg_emb_buf,
                                                                             this->model->item_embedding);

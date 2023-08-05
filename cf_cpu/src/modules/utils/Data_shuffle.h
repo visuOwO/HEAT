@@ -22,7 +22,7 @@ namespace cf {
             ~Data_shuffle() = default;
 
             template<class T>
-            static void shuffle_grad(T *send_data, std::vector<idx_t> &cols, idx_t dst_rank, T *recv_data,
+            static void shuffle_grad(T *send_data, std::vector<idx_t> &cols, idx_t dst_rank, T *&recv_data,
                                      std::vector<idx_t> &recv_cols);
 
 
