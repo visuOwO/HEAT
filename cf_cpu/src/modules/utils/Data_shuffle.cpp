@@ -13,29 +13,27 @@ namespace cf {
 
         // shuffle gradients from other ranks and update local embeddings
         void
-        Data_shuffle::shuffle_and_update_item_grads(const std::vector<idx_t> &neg_items, val_t *neg_item_embeddings,
+        Data_shuffle::shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> >& grads,
                                                     embeddings::Embedding *item_embeddings) {
-            std::unordered_map<idx_t, std::vector<idx_t>> negs_map;
-            std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
+            std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
-            for (idx_t i = 0; i < neg_items.size(); i++) {
-                idx_t part = neg_items[i] / k;
-                if (neg_items[i] - part * k < r) {
+            for (auto & entry:grads) {
+                idx_t idx = entry.first;
+                auto &grad = entry.second;
+                idx_t part = idx / k;
+                if (idx - part * k < r) {
                     part++;
                 }
-                negs_map[part].push_back(neg_items[i]);
-                idx_map[part].push_back(i);
+                grads_map[part].push_back(idx);
             }
 
-            printf("rank %d: update local embeddings\n", rank);
-
             // update local embeddings
-            for (auto i: negs_map[rank]) {
+            for (auto i: grads_map[rank]) {
                 printf("rank %d: update local embeddings for item %lu\n", rank, i);
                 auto *updated_item_embeddings = new val_t[emb_dim];
                 item_embeddings->weights->read_row(i-item_embeddings->start_idx, updated_item_embeddings);
-                cf_modules->optimizer->sparse_step(updated_item_embeddings, neg_item_embeddings + i * emb_dim);
+                cf_modules->optimizer->sparse_step(updated_item_embeddings, grads.at(i).data());
                 item_embeddings->weights->write_row(i-item_embeddings->start_idx, updated_item_embeddings);
             }
 
@@ -46,21 +44,18 @@ namespace cf {
                 idx_t dst = rank ^ i;
                 val_t *recv_data = nullptr;
                 std::vector<idx_t> recv_cols;
-                shuffle_grad(neg_item_embeddings, negs_map[dst], dst, recv_data, recv_cols);
-                printf("rank %d: receive %lu columns from rank %lu\n", rank, recv_cols.size(), dst);
+                auto send_buffer = new val_t[grads_map[dst].size() * emb_dim];
+                for (idx_t j = 0; j < grads_map[dst].size(); j++) {
+                    memcpy(send_buffer + j * emb_dim, grads.at(grads_map[dst][j]).data(), emb_dim * sizeof(val_t));
+                }
+                shuffle_grad(send_buffer, grads_map[dst], dst, recv_data, recv_cols);
                 Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> recv_data_arr(
                         recv_data, recv_cols.size(), emb_dim);
                 for (idx_t j = 0; j < recv_cols.size(); j++) {
-                    printf("rank %d: update local embeddings for item %lu\n", rank, recv_cols[j]);
                     auto *updated_item_embeddings = new val_t[emb_dim];
                     item_embeddings->weights->read_row(recv_cols[j] - item_embeddings->start_idx, updated_item_embeddings);
-                    printf("finish reading item %lu from rank %d\n", recv_cols[j], rank);
-                    printf("%f\n", updated_item_embeddings[0]);
-                    printf("%f\n", *(recv_data+j*emb_dim));
                     cf_modules->optimizer->sparse_step(updated_item_embeddings, recv_data + j * emb_dim);
-                    printf("finish updating item %lu from rank %d\n", recv_cols[j], rank);
                     item_embeddings->weights->write_row(recv_cols[j] - item_embeddings->start_idx, updated_item_embeddings);
-                    printf("finish writing item %lu from rank %d\n", recv_cols[j], rank);
                     delete[] updated_item_embeddings;
                 }
                 delete[] recv_data;

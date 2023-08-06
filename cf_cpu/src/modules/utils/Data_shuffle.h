@@ -26,7 +26,7 @@ namespace cf {
                                      std::vector<idx_t> &recv_cols);
 
 
-            static void shuffle_and_update_item_grads(const std::vector<idx_t> &neg_items, val_t *neg_item_embeddings,
+            static void shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> >& grads,
                                                       embeddings::Embedding *item_embeddings);
 
             static void shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,

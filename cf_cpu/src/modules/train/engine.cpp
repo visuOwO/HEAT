@@ -535,7 +535,6 @@ namespace cf {
                     negative_sampler->sampling(neg_ids);
                     std::cout << "neg_ids: " << neg_ids[0] << " " << neg_ids[1] << " " << neg_ids[2] << std::endl;
                     if (i % this->cf_config->refresh_interval == 0) {
-                        // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
                         // Fetch next positive embedding for the next batch
                         std::vector<idx_t> pos_ids(this->cf_config->refresh_interval);
                         for (int j = 0; j < this->cf_config->refresh_interval; j++) {
@@ -545,29 +544,26 @@ namespace cf {
                             t_buf->pos_item_ids[j] = iid;
                         }
 
-                        std::cout << "start shuffling embs" << std::endl;
                         // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                            this->cf_config->refresh_interval),
                                                    t_buf->pos_emb_buf,
                                                    this->model->item_embedding);
 
-                        std::cout << "start shuffling grads" << std::endl;
 
                         // assume that the negative sampler is random tile negative sampler
                         if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
                             nullptr) {
                             auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
                             printf("start shuffling and updating grads\n");
-                            for (int j = 0; j < this->cf_config->refresh_interval; j++) {
-                                Data_shuffle::shuffle_and_update_item_grads(neg_tile, t_buf->tiled_neg_emb_buf,
-                                                                            this->model->item_embedding);
-                            }
+                            // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
+                            Data_shuffle::shuffle_embs(neg_tile,t_buf->tiled_neg_emb_buf,
+                                                       this->model->item_embedding);
                         } else {
                             throw std::runtime_error("Only support random tile negative sampler");
                         }
-
                     }
+
                     std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
                     loss += this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
                                                           this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
@@ -578,6 +574,11 @@ namespace cf {
                                 shared_aggregated_weights, this->cf_config->emb_dim, this->cf_config->emb_dim);
                         global_weight_mat -= behavior_aggregator.l_r * behavior_aggregator.weights0_grad_accu;
                         behavior_aggregator.weights0_grad_accu.setZero();   // reset the gradient accumulator
+                    }
+
+                    if (i % this->cf_config->refresh_interval == 0) {
+                        // update the global item embeddings from local gradients
+                        Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
                     }
                 }
                 process_status[rank] = 0;   // 0 means the process is finished
