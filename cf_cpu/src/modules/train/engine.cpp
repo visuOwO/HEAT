@@ -534,7 +534,16 @@ namespace cf {
                     std::cout << "user_id: " << user_id << " item_id: " << item_id << std::endl;
                     negative_sampler->sampling(neg_ids);
                     std::cout << "neg_ids: " << neg_ids[0] << " " << neg_ids[1] << " " << neg_ids[2] << std::endl;
+                    std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
+
                     if (i % this->cf_config->refresh_interval == 0) {
+                        if (i % this->cf_config->refresh_interval == 0) {
+                            // update the global item embeddings from local gradients
+                            Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
+                        }
+
+                        emb_grads.clear();
+
                         // Fetch next positive embedding for the next batch
                         std::vector<idx_t> pos_ids(this->cf_config->refresh_interval);
                         for (int j = 0; j < this->cf_config->refresh_interval; j++) {
@@ -564,9 +573,12 @@ namespace cf {
                         }
                     }
 
-                    std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
+                    printf("start forward and backward\n");
+
                     loss += this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
                                                           this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
+
+                    printf("update the global aggregator weights from local gradients\n");
                     if (i % this->cf_config->train_size == 0) {
                         // update the global aggregator weights from local gradients
                         val_t *data = behavior_aggregator.weights0_grad_accu.data();
@@ -576,10 +588,8 @@ namespace cf {
                         behavior_aggregator.weights0_grad_accu.setZero();   // reset the gradient accumulator
                     }
 
-                    if (i % this->cf_config->refresh_interval == 0) {
-                        // update the global item embeddings from local gradients
-                        Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
-                    }
+                    printf("loss is %f\n", loss);
+
                 }
                 process_status[rank] = 0;   // 0 means the process is finished
 
@@ -602,11 +612,8 @@ namespace cf {
                                                                                            this->cf_config->refresh_interval),
                                                    t_buf->pos_emb_buf,
                                                    this->model->item_embedding);
-                        Data_shuffle::shuffle_and_update_item_grads(std::vector<idx_t>(t_buf->neg_emb_buf0,
-                                                                                       t_buf->neg_emb_buf0 +
-                                                                                       this->cf_config->refresh_interval *
-                                                                                       this->cf_config->num_negs),
-                                                                     t_buf->tiled_neg_emb_buf,
+                        std::unordered_map<idx_t, std::vector<val_t>> emb_grads;
+                        Data_shuffle::shuffle_and_update_item_grads(emb_grads,
                                                                      this->model->item_embedding);
                     }
                 }

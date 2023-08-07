@@ -30,7 +30,7 @@ namespace cf {
 
             // update local embeddings
             for (auto i: grads_map[rank]) {
-                printf("rank %d: update local embeddings for item %lu\n", rank, i);
+                printf("rank %d: update local embeddings for item %lu, value is %lf\n", rank, i, grads.at(i)[0]);
                 auto *updated_item_embeddings = new val_t[emb_dim];
                 item_embeddings->weights->read_row(i-item_embeddings->start_idx, updated_item_embeddings);
                 cf_modules->optimizer->sparse_step(updated_item_embeddings, grads.at(i).data());
