@@ -533,7 +533,7 @@ namespace cf {
                     this->train_data->read_user_item(train_data_idx, user_id, item_id);
                     std::cout << "user_id: " << user_id << " item_id: " << item_id << std::endl;
                     negative_sampler->sampling(neg_ids);
-                    std::cout << "neg_ids: " << neg_ids[0] << " " << neg_ids[1] << " " << neg_ids[2] << std::endl;
+                    printf("neg_ids: %lu %lu %lu %lu\n", neg_ids[0], neg_ids[1], neg_ids[2], neg_ids[3]);
                     std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
 
                     if (i % this->cf_config->refresh_interval == 0) {
@@ -561,6 +561,16 @@ namespace cf {
 
 
                         // assume that the negative sampler is random tile negative sampler
+
+                        //  just a test for reading an embedding
+                        printf("test for reading an embedding\n");
+                        std::vector<val_t> emb(this->cf_config->emb_dim);
+                        /*this->model->item_embedding->read_weights(5+this->model->item_embedding->start_idx, emb.data());
+                        for (int j = 0; j < this->cf_config->emb_dim; j++) {
+                            printf("%f ", emb[j]);
+                        }
+                        printf("\n");*/
+
                         if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
                             nullptr) {
                             auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
@@ -568,12 +578,28 @@ namespace cf {
                             // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
                             Data_shuffle::shuffle_embs(neg_tile,t_buf->tiled_neg_emb_buf,
                                                        this->model->item_embedding);
+
+                            printf("start inspecting negative embeddings\n");
+
+                            for (auto j = 0; j < this->cf_config->tile_size; j++) {
+                                printf("%lu ", neg_tile[j]);
+                            }
+                            printf("\n");
+                            // inspect the negative embeddings
+                            for (auto j = 0; j < this->cf_config->tile_size; j++) {
+                                printf("negative embedding %d %d, %f %f %f %f\n", j, rank, t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim],
+                                       t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 1],
+                                       t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 2],
+                                       t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 3]);
+                            }
+
+                            printf("finish inspecting negative embeddings\n");
+
                         } else {
                             throw std::runtime_error("Only support random tile negative sampler");
                         }
                     }
 
-                    printf("start forward and backward\n");
 
                     loss += this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
                                                           this->cf_modules, t_buf, &behavior_aggregator, emb_grads);

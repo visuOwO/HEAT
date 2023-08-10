@@ -65,6 +65,7 @@ namespace cf {
         // get embeddings from other ranks before computing
         // input: items, received_item_embeddings (pre-allocated buffer for positive embeddings)
         // output: received_item_embeddings (positive embeddings)
+        // TODO: copy local embeddings to received_item_embeddings
         void Data_shuffle::shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,
                                         embeddings::Embedding *item_embeddings) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
@@ -112,7 +113,7 @@ namespace cf {
             for (auto i = 0; i < items_map[rank].size(); i++) {
                 idx_t idx = items_map[rank][i];
                 auto *updated_item_embeddings = new val_t[emb_dim];
-                item_embeddings->weights->read_row(idx, updated_item_embeddings);
+                item_embeddings->weights->read_row(idx-item_embeddings->start_idx, updated_item_embeddings);
                 memcpy(received_item_embeddings + idx_map[rank][i] * emb_dim, updated_item_embeddings, emb_dim * sizeof(val_t));
                 delete[] updated_item_embeddings;
             }
@@ -132,21 +133,23 @@ namespace cf {
                 MPI_Recv((void *) recv_cols.data(), recv_count, MPI_UINT64_T, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
 
-                printf("rank %d, recv_count is %lu\n", rank, recv_count);
                 // prepare send data
                 auto *send_data = new val_t[recv_count * emb_dim];
-                std::cout << recv_count << " " << rank << std::endl;
-                std::cout << "Test 0 " << rank << std::endl;
-                printf("start: %lu, end: %lu\n", item_embeddings->start_idx, item_embeddings->end_idx);
                 for (idx_t i = 0; i < recv_count; i++) {
                     item_embeddings->weights->read_row(recv_cols[i]-item_embeddings->start_idx, send_data + i * emb_dim);
                 }
-                std::cout << "Test 1 " << rank << std::endl;
+
                 requested_data = new val_t[requested_count * emb_dim];
+
+                for (auto i = 0; i < emb_dim; i++) {
+                    printf("send_data0[%d] is %f\n", i, send_data[i]);
+                }
+                printf("send_data0 size is %lu\n", recv_count * emb_dim);
+
                 MPI_Send((void *) send_data, recv_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);
                 MPI_Recv((void *) requested_data, requested_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
-                std::cout << "Test 2 " << rank << std::endl;
+
                 delete[] send_data;
             } else {
                 MPI_Recv((void *) &recv_count, 1, MPI_UINT64_T, dst_rank, 0, comm, MPI_STATUS_IGNORE);
@@ -159,18 +162,16 @@ namespace cf {
                 printf("rank %d, recv_count is %lu\n", rank, recv_count);
 
                 auto *send_data = new val_t[recv_count * emb_dim];
-                std::cout << recv_count << " " << rank << std::endl;
-                std::cout << "Test 0 " << rank << std::endl;
-                printf("start: %lu, end: %lu\n", item_embeddings->start_idx, item_embeddings->end_idx);
                 for (unsigned long i = 0; i < recv_count; i++) {
-                    item_embeddings->weights->read_row(requested_cols[i]-item_embeddings->start_idx, send_data + i * emb_dim);
+                    item_embeddings->weights->read_row(recv_cols[i]-item_embeddings->start_idx, send_data + i * emb_dim);
                 }
-                std::cout << "Test 1 " << rank << std::endl;
                 requested_data = new val_t[requested_count * emb_dim];
+
+                printf("send_data1 size is %lu\n", recv_count * emb_dim);
+
                 MPI_Recv((void *) requested_data, requested_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
                 MPI_Send((void *) send_data, recv_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);
-                std::cout << "Test 2 " << rank << std::endl;
                 delete[] send_data;
             }
         }
