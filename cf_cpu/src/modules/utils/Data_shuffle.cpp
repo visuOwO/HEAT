@@ -65,7 +65,6 @@ namespace cf {
         // get embeddings from other ranks before computing
         // input: items, received_item_embeddings (pre-allocated buffer for positive embeddings)
         // output: received_item_embeddings (positive embeddings)
-        // TODO: copy local embeddings to received_item_embeddings
         void Data_shuffle::shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,
                                         embeddings::Embedding *item_embeddings) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
