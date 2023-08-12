@@ -525,7 +525,6 @@ namespace cf {
                                                                              cf_config);
 
                 std::cout << "start training" << std::endl;
-                std::cout << typeid(*negative_sampler).name() << std::endl;
                 for (idx_t i = 0; i < iterations; i++) {
                     std::cout << "iteration: " << i << std::endl;
                     idx_t train_data_idx = this->positive_sampler->read(i);
@@ -537,13 +536,16 @@ namespace cf {
                     std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
 
                     if (i % this->cf_config->refresh_interval == 0) {
+                        MPI_Barrier(MPI_COMM_WORLD);
+                        printf("test0\n");
                         if (i % this->cf_config->refresh_interval == 0) {
+                            printf("test0.1\n");
                             // update the global item embeddings from local gradients
                             Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
                         }
 
                         emb_grads.clear();
-
+                        printf("test1\n");
                         // Fetch next positive embedding for the next batch
                         std::vector<idx_t> pos_ids(this->cf_config->refresh_interval);
                         for (int j = 0; j < this->cf_config->refresh_interval; j++) {
@@ -553,6 +555,7 @@ namespace cf {
                             t_buf->pos_item_ids[j] = iid;
                         }
 
+                        printf("test2\n");
                         // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                            this->cf_config->refresh_interval),
@@ -603,6 +606,13 @@ namespace cf {
 
                     loss += this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
                                                           this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
+
+                    printf("start examine aggregated weights\n");
+                    for (int j = 0; j < this->cf_config->emb_dim; j++) {
+                        printf("%f ", shared_aggregated_weights[j]);
+                    }
+                    printf("\n");
+                    printf("finish examine aggregated weights\n");
 
                     printf("update the global aggregator weights from local gradients\n");
                     if (i % this->cf_config->train_size == 0) {

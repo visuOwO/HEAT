@@ -117,9 +117,25 @@ void init_behavior_aggregators(py::module_ &modules_module) {
                      MPI_Win_allocate_shared(sizeof(val_t) * emb_dim * emb_dim,
                                              sizeof(val_t),
                                              MPI_INFO_NULL, shared_comm, &shared_aggregated_weights, &win);
+                     MPI_Win_fence(0, win);
+                     if (rank == 0) {
+                         memcpy(shared_aggregated_weights, init_weights0, sizeof(val_t) * emb_dim * emb_dim);
+                     }
+                     MPI_Win_fence(0, win);
 
-                     memcpy(shared_aggregated_weights, init_weights0, sizeof(val_t) * emb_dim * emb_dim);
+                     int disp_unit;
+                     MPI_Aint win_size;
+                     MPI_Win_shared_query(win, 0, &win_size, &disp_unit, &shared_aggregated_weights);
 
+                     for (int i = 0; i < world_size; i++) {
+                         if (i == rank) {
+                             std::cout << "rank " << rank << " shared_aggregated_weights: ";
+                             for (int j = 0; j < emb_dim * emb_dim; j++) {
+                                 std::cout << shared_aggregated_weights[j] << " ";
+                             }
+                             std::cout << std::endl;
+                         }
+                     }
                      return cf::modules::behavior_aggregators::AggregatorWeights(emb_dim, shared_aggregated_weights);
                  }),
                  py::arg("aggregator_weights0"))

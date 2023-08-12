@@ -15,10 +15,25 @@ namespace cf {
         void
         Data_shuffle::shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> >& grads,
                                                     embeddings::Embedding *item_embeddings) {
-            std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
+            printf("test shuffle and update item grads\n");
+            printf("total cols is %lu\n", total_cols);
+            printf("world size is %d\n", world_size);
+            MPI_Barrier(MPI_COMM_WORLD);
+            std::map<idx_t, std::vector<idx_t>> grads_map;
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
+
+            printf("test 0.2\n");
+
+            // init grads_map
+            for (idx_t i = 0; i < world_size; i++) {
+                printf("test 0.3\n");
+                grads_map.insert(std::make_pair(i, std::vector<idx_t>()));
+            }
+
+            printf("grads size is %lu\n", grads.size());
             for (auto & entry:grads) {
+                printf("rank %d: shuffle gradient for item %lu\n", rank, entry.first);
                 idx_t idx = entry.first;
                 auto &grad = entry.second;
                 idx_t part = idx / k;
@@ -26,6 +41,13 @@ namespace cf {
                     part++;
                 }
                 grads_map[part].push_back(idx);
+            }
+
+            printf("grads_map size is %lu\n", grads_map.size());
+            for (auto & entry:grads_map) {
+                idx_t rank = entry.first;
+                auto &grads = entry.second;
+                printf("rank %lu: shuffle %lu gradients from rank %lu\n", rank, grads.size(), rank);
             }
 
             // update local embeddings
@@ -37,7 +59,6 @@ namespace cf {
                 item_embeddings->weights->write_row(i-item_embeddings->start_idx, updated_item_embeddings);
             }
 
-            printf("rank %d: finish update local embeddings\n", rank);
 
             // shuffle and update embeddings from other ranks
             for (idx_t i = 1; i < world_size; i++) {
@@ -69,11 +90,8 @@ namespace cf {
                                         embeddings::Embedding *item_embeddings) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
-            std::cout << "total column is " << total_cols << std::endl;
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
-            std::cout << "k is " << k << std::endl;
-            std::cout << "r is " << r << std::endl;
 
             //initialize the map
             for (auto i = 0; i < world_size; i++) {
@@ -91,14 +109,10 @@ namespace cf {
                 items_map[part].push_back(idx);
                 idx_map[part].push_back(i);
             }
-            for (auto i = 0; i < world_size; i++) {
-                std::cout << "rank " << i << " has " << items_map[i].size() << " items" << std::endl;
-            }
             std::vector<idx_t> cnts(world_size, 0);
             std::vector<val_t*> received_data(world_size, nullptr);
             for (auto i = 1; i < world_size; i++) {
                 idx_t dst = rank ^ i;
-                std::cout << "from " << rank << " to " << dst << std::endl;
                 auto *recv_data = new val_t[items_map[dst].size() * emb_dim];
                 std::vector<idx_t> recv_cols;
                 request_data(recv_data, items_map[dst], dst, item_embeddings);
@@ -140,11 +154,6 @@ namespace cf {
 
                 requested_data = new val_t[requested_count * emb_dim];
 
-                for (auto i = 0; i < emb_dim; i++) {
-                    printf("send_data0[%d] is %f\n", i, send_data[i]);
-                }
-                printf("send_data0 size is %lu\n", recv_count * emb_dim);
-
                 MPI_Send((void *) send_data, recv_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);
                 MPI_Recv((void *) requested_data, requested_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
@@ -158,15 +167,12 @@ namespace cf {
 
                 MPI_Send((void *) &requested_count, 1, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) requested_cols.data(), requested_count, MPI_UINT64_T, dst_rank, 0, comm);
-                printf("rank %d, recv_count is %lu\n", rank, recv_count);
 
                 auto *send_data = new val_t[recv_count * emb_dim];
                 for (unsigned long i = 0; i < recv_count; i++) {
                     item_embeddings->weights->read_row(recv_cols[i]-item_embeddings->start_idx, send_data + i * emb_dim);
                 }
                 requested_data = new val_t[requested_count * emb_dim];
-
-                printf("send_data1 size is %lu\n", recv_count * emb_dim);
 
                 MPI_Recv((void *) requested_data, requested_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);

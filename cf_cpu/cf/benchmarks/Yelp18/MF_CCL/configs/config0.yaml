@@ -1,16 +1,16 @@
 dataset_config:
-    data_dir: /home/hld/HEAT/LightGCN/Data/yelp2018
+    data_dir: /home/hld/CLionProjects/HEAT_MPI/LightGCN/Data/yelp2018
     data_format: txt
     separator: ' '
     train_data: train.txt
     test_data: test.txt
 
 model_config:
-    num_negs: 64
+    num_negs: 4
     max_his: 100
-    embedding_dim: 128
+    embedding_dim: 4
     neg_sampler: 1
-    tile_size: 512
+    tile_size: 8
     refresh_interval: 8192
     embedding_dropout: 0
     similarity_score: dot
