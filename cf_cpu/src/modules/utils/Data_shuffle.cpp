@@ -19,16 +19,16 @@ namespace cf {
             printf("total cols is %lu\n", total_cols);
             printf("world size is %d\n", world_size);
             MPI_Barrier(MPI_COMM_WORLD);
-            std::map<idx_t, std::vector<idx_t>> grads_map;
+            std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
+            //std::vector<std::vector<idx_t>> grads_map(world_size, std::vector<idx_t>());
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
 
             printf("test 0.2\n");
 
-            // init grads_map
-            for (idx_t i = 0; i < world_size; i++) {
-                printf("test 0.3\n");
-                grads_map.insert(std::make_pair(i, std::vector<idx_t>()));
+            //initialize the map
+            for (auto i = 0; i < world_size; i++) {
+                grads_map[i] = std::vector<idx_t>();
             }
 
             printf("grads size is %lu\n", grads.size());
@@ -44,10 +44,8 @@ namespace cf {
             }
 
             printf("grads_map size is %lu\n", grads_map.size());
-            for (auto & entry:grads_map) {
-                idx_t rank = entry.first;
-                auto &grads = entry.second;
-                printf("rank %lu: shuffle %lu gradients from rank %lu\n", rank, grads.size(), rank);
+            for (auto i = 0; i < world_size; i++) {
+                printf("rank %d: grads_map[%d] size is %lu\n", rank, i, grads_map[i].size());
             }
 
             // update local embeddings

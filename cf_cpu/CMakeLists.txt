@@ -46,6 +46,7 @@ file(GLOB CF_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/optimizers/*.cpp 
     ${CMAKE_SOURCE_DIR}/src/modules/train/*.cpp
         ${CMAKE_SOURCE_DIR}/src/modules/test/*.cpp
+        ${CMAKE_SOURCE_DIR}/src/modules/utils/Data_shuffle.cpp
     )
 
 find_package(Eigen3 REQUIRED)
@@ -54,12 +55,9 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 
 add_library(cf ${CF_SOURCES})
 
-add_library(shuffle ${CMAKE_SOURCE_DIR}/src/modules/utils/Data_shuffle.cpp)
-
 add_subdirectory(extern/pybind11)
 file(GLOB PYBIND_SOURCES src/pybind/*.cpp)
 pybind11_add_module(cf_c MODULE ${PYBIND_SOURCES})
-target_link_libraries(cf_c PUBLIC shuffle)
 target_link_libraries(cf_c PUBLIC cf)
 target_link_libraries(cf_c PUBLIC ${MPI_LIBRARIES})
 
