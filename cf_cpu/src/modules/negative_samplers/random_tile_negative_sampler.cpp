@@ -38,7 +38,9 @@ void RandomTileNegativeSampler::sampling(std::vector<idx_t>& neg_ids)
     for (idx_t i = 0; i < this->num_negs; ++i)
     {
         idx_t tile_idx = this->tile_sampler->read();
-        neg_ids[i] = neg_tile[tile_idx];
+        neg_ids[i] = tile_idx;
+        // neg_ids[i] = neg_tile[tile_idx];
+        // modified to return index instead of id
     }
 
     this->iterations += 1;

@@ -35,7 +35,7 @@ namespace cf {
 
                 // val_t* pos_emb_ptr = item_embedding_weights->read_row(pos_id, t_buf->pos_emb_buf);
 
-                val_t *pos_emb_ptr = t_buf->pos_emb_buf;
+                val_t *pos_emb_ptr = t_buf->pos_emb_buf + pos_id * emb_dim;
 
 
                 if (remote_item_embeddings_grads.find(t_buf->pos_item_ids[pos_id]) ==
@@ -134,6 +134,18 @@ namespace cf {
                 t_buf->time_map["dot"] = t_buf->time_map["dot"] + (end_time - start_time);
                 start_time = end_time;
 
+                //examine negative embeddings
+                printf("start examine negative embeddings\n");
+                for (idx_t neg_idx = 0; neg_idx < num_negs; ++neg_idx) {
+                    idx_t neg_id = neg_ids[neg_idx];
+                    printf("neg_id=%lu\n", neg_id);
+                    for (idx_t i = 0; i < emb_dim; i++) {
+                        printf("%f ", t_buf->neg_emb_buf1[neg_idx * emb_dim + i]);
+                    }
+                    printf("\n");
+                }
+                printf("finish examine negative embeddings\n");
+
                 // compute user negative cosine similarity, score
                 val_t user_pos_cos = user_pos_dot / (user_norm * pos_norm);
                 Eigen::Array<val_t, 1, Eigen::Dynamic> selected_negs_negs_dots = (neg_neg_dots.array() < eps).select(
@@ -204,6 +216,23 @@ namespace cf {
                     pos_emb_grad += loss_grad(0, neg_idx) * u_p_cos_p_grad;
                     neg_emb_grad += loss_grad(0, neg_idx) * u_n_cos_n_grad;
 
+                    /*for (idx_t i = 0; i < emb_dim; i++) {
+                        printf("%f ", neg_emb_grad(i));
+                    }
+                    printf("\n");
+
+                    for (idx_t i = 0; i < emb_dim; i++) {
+                        printf("%f ", user_emb_grad(i));
+                    }
+
+                    printf("\n");
+
+                    for (idx_t i = 0; i < emb_dim; i++) {
+                        printf("%f ", pos_emb_grad(i));
+                    }
+
+                    printf("\n");*/
+
                     // regularize negative embedding
                     // neg_emb_grad += l2 * neg_embs.row(neg_idx);
 
@@ -239,7 +268,7 @@ namespace cf {
                 cf_modules->optimizer->sparse_step(user_emb_ptr, user_grad_ptr);
 
                 // pos_emb_grad += l2 * pos_emb;
-                //cf_modules->optimizer->sparse_step(pos_emb_ptr, pos_grad_ptr);
+                cf_modules->optimizer->sparse_step(pos_emb_ptr, pos_grad_ptr);
 
                 user_embedding_weights->write_row(user_id, user_emb_ptr);
                 user_embedding_grads->write_row(user_id, user_grad_ptr);

@@ -536,27 +536,26 @@ namespace cf {
                     std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
 
                     if (i % this->cf_config->refresh_interval == 0) {
-                        MPI_Barrier(MPI_COMM_WORLD);
-                        printf("test0\n");
                         if (i % this->cf_config->refresh_interval == 0) {
-                            printf("test0.1\n");
                             // update the global item embeddings from local gradients
                             Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
                         }
 
                         emb_grads.clear();
-                        printf("test1\n");
                         // Fetch next positive embedding for the next batch
                         std::vector<idx_t> pos_ids(this->cf_config->refresh_interval);
                         for (int j = 0; j < this->cf_config->refresh_interval; j++) {
+                            if (i + j >= iterations) {
+                                break;
+                            }
                             idx_t id = this->positive_sampler->read(i + j);
                             idx_t uid, iid;
                             this->train_data->read_user_item(id, uid, iid);
                             t_buf->pos_item_ids[j] = iid;
                         }
 
-                        printf("test2\n");
                         // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
+                        printf("start shuffling and updating grads\n");
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                            this->cf_config->refresh_interval),
                                                    t_buf->pos_emb_buf,
@@ -566,7 +565,7 @@ namespace cf {
                         // assume that the negative sampler is random tile negative sampler
 
                         //  just a test for reading an embedding
-                        printf("test for reading an embedding\n");
+                        //printf("test for reading an embedding\n");
                         std::vector<val_t> emb(this->cf_config->emb_dim);
                         /*this->model->item_embedding->read_weights(5+this->model->item_embedding->start_idx, emb.data());
                         for (int j = 0; j < this->cf_config->emb_dim; j++) {
@@ -574,6 +573,7 @@ namespace cf {
                         }
                         printf("\n");*/
 
+                        printf("start inspecting positive embeddings\n");
                         if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
                             nullptr) {
                             auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
@@ -582,7 +582,7 @@ namespace cf {
                             Data_shuffle::shuffle_embs(neg_tile,t_buf->tiled_neg_emb_buf,
                                                        this->model->item_embedding);
 
-                            printf("start inspecting negative embeddings\n");
+                            /*printf("start inspecting negative embeddings\n");
 
                             for (auto j = 0; j < this->cf_config->tile_size; j++) {
                                 printf("%lu ", neg_tile[j]);
@@ -596,25 +596,28 @@ namespace cf {
                                        t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 3]);
                             }
 
-                            printf("finish inspecting negative embeddings\n");
+                            printf("finish inspecting negative embeddings\n");*/
 
                         } else {
                             throw std::runtime_error("Only support random tile negative sampler");
                         }
                     }
 
-
-                    loss += this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
+                    printf("start forward and backward\n")  ;
+                    auto tmp = this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
                                                           this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
 
-                    printf("start examine aggregated weights\n");
+                    printf("finish forward and backward\n")  ;
+                    loss = loss + tmp;
+
+                    /*printf("start examine aggregated weights\n");
                     for (int j = 0; j < this->cf_config->emb_dim; j++) {
                         printf("%f ", shared_aggregated_weights[j]);
                     }
                     printf("\n");
-                    printf("finish examine aggregated weights\n");
+                    printf("finish examine aggregated weights\n");*/
 
-                    printf("update the global aggregator weights from local gradients\n");
+                    /*printf("update the global aggregator weights from local gradients\n");
                     if (i % this->cf_config->train_size == 0) {
                         // update the global aggregator weights from local gradients
                         val_t *data = behavior_aggregator.weights0_grad_accu.data();
@@ -622,13 +625,13 @@ namespace cf {
                                 shared_aggregated_weights, this->cf_config->emb_dim, this->cf_config->emb_dim);
                         global_weight_mat -= behavior_aggregator.l_r * behavior_aggregator.weights0_grad_accu;
                         behavior_aggregator.weights0_grad_accu.setZero();   // reset the gradient accumulator
-                    }
+                    }*/
 
                     printf("loss is %f\n", loss);
 
                 }
                 process_status[rank] = 0;   // 0 means the process is finished
-
+                loss = loss / iterations;
                 // keep sharing data until all the processes are finished
                 while (true) {
                     bool all_finished = true;
