@@ -17,6 +17,7 @@ namespace cf {
                                                     embeddings::Embedding *item_embeddings) {
             MPI_Barrier(MPI_COMM_WORLD);
             std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
+            //printf("update item grads, size is: %zu\n", grads.size());
             //std::vector<std::vector<idx_t>> grads_map(world_size, std::vector<idx_t>());
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
@@ -34,13 +35,29 @@ namespace cf {
                     part++;
                 }
                 grads_map[part].push_back(idx);
+
+                /*for (idx_t j = 0; j < emb_dim; j++) {
+                    printf("%f ", grad[j]);
+                }
+                printf("\n");*/
+
             }
 
             // update local embeddings
             for (auto i: grads_map[rank]) {
                 auto *updated_item_embeddings = new val_t[emb_dim];
                 item_embeddings->weights->read_row(i - item_embeddings->start_idx, updated_item_embeddings);
+                /*for (idx_t j = 0; j < emb_dim; j++) {
+                    printf("%f ", updated_item_embeddings[j]);
+                }
+                printf("\n");*/
                 cf_modules->optimizer->sparse_step(updated_item_embeddings, grads.at(i).data());
+                /*for (idx_t j = 0; j < emb_dim; j++) {
+                    printf("%f ", updated_item_embeddings[j]);
+                }
+                printf("\n");
+                printf("000\n");*/
+
                 item_embeddings->weights->write_row(i - item_embeddings->start_idx, updated_item_embeddings);
             }
 
@@ -80,6 +97,7 @@ namespace cf {
             idx_t k = total_cols / world_size;
             idx_t r = total_cols % world_size;
 
+            //printf("shuffle embs, size is: %zu\n", items.size());
             //initialize the map
             for (auto i = 0; i < world_size; i++) {
                 items_map[i] = std::vector<idx_t>();
@@ -113,10 +131,15 @@ namespace cf {
             // copy local embeddings
             for (auto i = 0; i < items_map[rank].size(); i++) {
                 idx_t idx = items_map[rank][i];
+                //printf("%lu %lu\n", idx_map[rank][i], idx);
                 auto *updated_item_embeddings = new val_t[emb_dim];
                 item_embeddings->weights->read_row(idx - item_embeddings->start_idx, updated_item_embeddings);
                 memcpy(received_item_embeddings + idx_map[rank][i] * emb_dim, updated_item_embeddings,
                        emb_dim * sizeof(val_t));
+                /*for (idx_t j = 0; j < emb_dim; j++) {
+                    printf("%f ", updated_item_embeddings[j]);
+                }
+                printf("\n");*/
                 delete[] updated_item_embeddings;
             }
         }

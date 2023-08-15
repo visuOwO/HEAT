@@ -525,15 +525,16 @@ namespace cf {
                                                                              cf_config);
 
                 std::cout << "start training" << std::endl;
+                std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
+
                 for (idx_t i = 0; i < iterations; i++) {
-                    std::cout << "iteration: " << i << std::endl;
+                    //std::cout << "iteration: " << i << std::endl;
                     idx_t train_data_idx = this->positive_sampler->read(i);
-                    std::cout << "train_data_idx: " << train_data_idx << std::endl;
+                    //std::cout << "train_data_idx: " << train_data_idx << std::endl;
                     this->train_data->read_user_item(train_data_idx, user_id, item_id);
-                    std::cout << "user_id: " << user_id << " item_id: " << item_id << std::endl;
+                    //std::cout << "user_id: " << user_id << " item_id: " << item_id << std::endl;
                     negative_sampler->sampling(neg_ids);
-                    printf("neg_ids: %lu %lu %lu %lu\n", neg_ids[0], neg_ids[1], neg_ids[2], neg_ids[3]);
-                    std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
+                    // printf("neg_ids: %lu %lu %lu %lu\n", neg_ids[0], neg_ids[1], neg_ids[2], neg_ids[3]);
 
                     if (i % this->cf_config->refresh_interval == 0) {
                         if (i % this->cf_config->refresh_interval == 0) {
@@ -555,7 +556,7 @@ namespace cf {
                         }
 
                         // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
-                        printf("start shuffling and updating grads\n");
+                        //printf("start shuffling pos embeddings\n");
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                            this->cf_config->refresh_interval),
                                                    t_buf->pos_emb_buf,
@@ -573,11 +574,10 @@ namespace cf {
                         }
                         printf("\n");*/
 
-                        printf("start inspecting positive embeddings\n");
                         if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
                             nullptr) {
                             auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
-                            printf("start shuffling and updating grads\n");
+                            //printf("start shuffling and updating neg grads\n");
                             // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
                             Data_shuffle::shuffle_embs(neg_tile,t_buf->tiled_neg_emb_buf,
                                                        this->model->item_embedding);
@@ -603,11 +603,11 @@ namespace cf {
                         }
                     }
 
-                    printf("start forward and backward\n")  ;
+                    //printf("start forward and backward\n")  ;
                     auto tmp = this->model->forward_backward(user_id, item_id % this->cf_config->refresh_interval, neg_ids,
                                                           this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
 
-                    printf("finish forward and backward\n")  ;
+                    //printf("finish forward and backward\n")  ;
                     loss = loss + tmp;
 
                     /*printf("start examine aggregated weights\n");
@@ -627,7 +627,7 @@ namespace cf {
                         behavior_aggregator.weights0_grad_accu.setZero();   // reset the gradient accumulator
                     }*/
 
-                    printf("loss is %f\n", loss);
+                    //printf("loss is %f\n", loss);
 
                 }
                 process_status[rank] = 0;   // 0 means the process is finished
@@ -651,7 +651,7 @@ namespace cf {
                                                                                            this->cf_config->refresh_interval),
                                                    t_buf->pos_emb_buf,
                                                    this->model->item_embedding);
-                        std::unordered_map<idx_t, std::vector<val_t>> emb_grads;
+                        emb_grads.clear();
                         Data_shuffle::shuffle_and_update_item_grads(emb_grads,
                                                                      this->model->item_embedding);
                     }
