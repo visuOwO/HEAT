@@ -12,6 +12,7 @@ namespace cf {
 
 
             val_t MatrixFactorization::forward_backward(idx_t user_id, idx_t pos_id, std::vector<idx_t> &neg_ids,
+                                                        std::vector<idx_t> neg_tile,
                                                         const std::shared_ptr<CFModules> cf_modules,
                                                         memory::ThreadBuffer *t_buf,
                                                         behavior_aggregators::BehaviorAggregator *behavior_aggregator,
@@ -31,7 +32,25 @@ namespace cf {
                 memory::Array<val_t> *item_embedding_weights = this->item_embedding->weights;
                 memory::Array<val_t> *item_embedding_grads = this->item_embedding->grads;
 
-                val_t *user_emb_ptr = user_embedding_weights->read_row(user_id-this->user_embedding->start_idx, t_buf->user_emb_buf);
+                auto * user_emb_buf = new val_t[emb_dim];
+                val_t *user_emb_ptr = user_embedding_weights->read_row(user_id-this->user_embedding->start_idx, user_emb_buf);
+
+                /*printf("test embedding\n");
+                std::vector<val_t> emb(emb_dim, 0.0);
+                user_embedding_weights->read_row(3-this->user_embedding->start_idx, emb.data());
+                printf("%f %f %f %f\n", emb[0], emb[1], emb[2], emb[3]);
+                if (user_id == 3) {
+                    printf("%f %f %f %f\n", user_emb_ptr[0], user_emb_ptr[1], user_emb_ptr[2], user_emb_ptr[3]);
+                }
+                printf("finish test embedding\n");
+
+                printf("test aggregator weights\n");
+                std::vector<val_t> weights0(emb_dim * emb_dim, 0.0);
+                printf("%f %f %f %f\n", behavior_aggregator->aggregator_weights->weights0(0, 0),
+                       behavior_aggregator->aggregator_weights->weights0(0, 1),
+                       behavior_aggregator->aggregator_weights->weights0(1, 0),
+                       behavior_aggregator->aggregator_weights->weights0(1, 1));
+                printf("finish test aggregator weights\n");*/
 
                 // val_t* pos_emb_ptr = item_embedding_weights->read_row(pos_id, t_buf->pos_emb_buf);
 
@@ -68,6 +87,8 @@ namespace cf {
 
                 Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> user_emb(user_emb_ptr, 1, emb_dim);
                 Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> pos_emb(pos_emb_ptr, 1, emb_dim);
+
+
                 val_t user_user_dot = user_emb.dot(user_emb);
                 val_t pos_pos_dot = pos_emb.dot(pos_emb);
                 val_t user_pos_dot = user_emb.dot(pos_emb);
@@ -96,6 +117,18 @@ namespace cf {
 
                 //printf("calculate gradient\n");
 
+                // examine negative embeddings
+                /*printf("start examine negative embeddings\n");
+                  for (idx_t neg_idx = 0; neg_idx < num_negs; ++neg_idx) {
+                    idx_t neg_id = neg_ids[neg_idx];
+                    printf("neg_id=%lu\n", neg_id);
+                    for (idx_t i = 0; i < emb_dim; i++) {
+                        printf("%f ", t_buf->tiled_neg_emb_buf[neg_idx * emb_dim + i]);
+                    }
+                    printf("\n");
+                }
+                printf("finish examine negative embeddings\n");*/
+
                 // compute user negative dot products
                 for (idx_t neg_idx = 0; neg_idx < num_negs; ++neg_idx) {
                     idx_t neg_id = neg_ids[neg_idx];
@@ -119,6 +152,15 @@ namespace cf {
                     //val_t* neg_grad_ptr = item_embedding_grads->read_row(neg_id, t_buf->neg_grad_buf);
                     //Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb_grad(neg_grad_ptr, 1, emb_dim);
                 }
+
+                // start examine embeddings
+                /*printf("start examine embeddings\n");
+                printf("user_id=%lu, pos_id=%lu, neg_id=%lu\n", user_id, pos_id, neg_ids[0]);
+                printf("%f %f %f %f\n", user_emb_ptr[0], user_emb_ptr[1], user_emb_ptr[2], user_emb_ptr[3]);
+                printf("%f %f %f %f\n", pos_emb_ptr[0], pos_emb_ptr[1], pos_emb_ptr[2], pos_emb_ptr[3]);
+                printf("%f %f %f %f\n", t_buf->neg_emb_buf1[0], t_buf->neg_emb_buf1[1], t_buf->neg_emb_buf1[2], t_buf->neg_emb_buf1[3]);
+                printf("finish examine embeddings\n");*/
+
                 end_time = omp_get_wtime();
                 t_buf->time_map["read_emb"] = t_buf->time_map["read_emb"] + (end_time - start_time);
                 start_time = end_time;
@@ -135,17 +177,15 @@ namespace cf {
                 t_buf->time_map["dot"] = t_buf->time_map["dot"] + (end_time - start_time);
                 start_time = end_time;
 
-                //examine negative embeddings
-                /*printf("start examine negative embeddings\n");
-                for (idx_t neg_idx = 0; neg_idx < num_negs; ++neg_idx) {
-                    idx_t neg_id = neg_ids[neg_idx];
-                    printf("neg_id=%lu\n", neg_id);
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", t_buf->neg_emb_buf1[neg_idx * emb_dim + i]);
-                    }
-                    printf("\n");
+                // examine positive embedding
+                /*printf("start examine positive embedding\n");
+                  for (idx_t i = 0; i < emb_dim; i++) {
+                    printf("%f ", pos_emb_ptr[i]);
                 }
-                printf("finish examine negative embeddings\n");*/
+                printf("\n");
+                printf("finish examine positive embedding\n");*/
+
+
 
                 // compute user negative cosine similarity, score
                 //printf("calculate negative cosine similarity\n") ;
@@ -208,11 +248,11 @@ namespace cf {
                     // Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb(neg_emb_ptr, 1, emb_dim);
 
                     //val_t* neg_grad_ptr = item_embedding_grads->read_row(neg_id, t_buf->neg_grad_buf);
-                    if (remote_item_embeddings_grads.find(neg_id) == remote_item_embeddings_grads.end()) {
+                    if (remote_item_embeddings_grads.find(neg_tile[neg_id]) == remote_item_embeddings_grads.end()) {
                         remote_item_embeddings_grads.insert(
                                 {neg_id, std::vector<val_t>(emb_dim, 0.0)});    // initialize gradients to 0
                     }
-                    val_t *neg_grad_ptr = remote_item_embeddings_grads[neg_id].data();
+                    val_t *neg_grad_ptr = remote_item_embeddings_grads[neg_tile[neg_id]].data();
                     Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb_grad(neg_grad_ptr, 1,
                                                                                                       emb_dim);
 
@@ -225,48 +265,12 @@ namespace cf {
                             (neg_neg_dots(0, neg_idx) * user_emb - user_neg_dots(0, neg_idx) * neg_embs.row(neg_idx)) *
                             r_u_n3;
 
-                    /*printf("test2\n");
+                    printf("test2\n");
+
+                    //printf("neg_emb is %f %f %f %f\n", neg_embs(neg_idx, 0), neg_embs(neg_idx, 1), neg_embs(neg_idx, 2),
+                           //neg_embs(neg_idx, 3));
                     printf("loss_grad(0, neg_idx)=%f\n", loss_grad(0, neg_idx));
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", u_n_cos_u_grad(i));
-                    }
-                    printf("\n");
 
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", u_p_cos_u_grad(i));
-                    }
-                    printf("\n");
-
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", u_p_cos_p_grad(i));
-                    }
-                    printf("\n");
-
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", u_n_cos_n_grad(i));
-                    }
-                    printf("\n");
-
-                    printf("test3\n");
-
-                    printf("test3.3\n");
-
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", neg_emb_grad(i));
-                    }
-                    printf("\n");
-
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", user_emb_grad(i));
-                    }
-
-                    printf("\n");
-
-                    for (idx_t i = 0; i < emb_dim; i++) {
-                        printf("%f ", pos_emb_grad(i));
-                    }
-
-                    printf("\n");*/
 
                     // regularize negative embedding
                     // neg_emb_grad += l2 * neg_embs.row(neg_idx);
@@ -282,12 +286,6 @@ namespace cf {
                     // item_embedding_grads->write_row(neg_id, neg_grad_ptr);
                 }
 
-                //printf("calculate grad\n") ;
-
-                /*for (idx_t i = 0; i < emb_dim; i++) {
-                    printf("%f ", pos_emb_grad(i));
-                }
-                printf("\n");*/
 
                 behavior_aggregator->backward(user_grad_ptr);
                 end_time = omp_get_wtime();
@@ -309,6 +307,12 @@ namespace cf {
 
                 // pos_emb_grad += l2 * pos_emb;
                 cf_modules->optimizer->sparse_step(pos_emb_ptr, pos_grad_ptr);
+
+                // examine the weights that write to the embedding
+                printf("start examine the weights that write to the embedding\n");
+                printf("user_id=%lu, pos_id=%lu, neg_id=%lu\n", user_id, pos_id, neg_ids[0]);
+                printf("%f %f %f %f\n", user_emb_ptr[0], user_emb_ptr[1], user_emb_ptr[2], user_emb_ptr[3]);
+                printf("finish examine the weights that write to the embedding\n");
 
                 user_embedding_weights->write_row(user_id, user_emb_ptr);
                 user_embedding_grads->write_row(user_id, user_grad_ptr);

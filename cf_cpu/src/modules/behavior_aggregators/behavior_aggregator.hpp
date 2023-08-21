@@ -71,6 +71,9 @@ class BehaviorAggregator
     val_t* his_emb_buf;
     val_t* his_embs;
     val_t* his_grad;
+
+    std::vector<idx_t> his_ids;
+    std::unordered_map<idx_t, idx_t> his_id_map;
 };
 
 }

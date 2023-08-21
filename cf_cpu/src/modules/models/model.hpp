@@ -30,7 +30,7 @@ class Model
     val_t* read_gradient(embeddings::Embedding* embedding, idx_t idx, val_t* grad_buf);
     void write_gradient(embeddings::Embedding* embedding, idx_t idx, val_t* grad_buf);
 
-    virtual val_t forward_backward(idx_t user_id, idx_t pos_id, std::vector<idx_t>& neg_ids, 
+    virtual val_t forward_backward(idx_t user_id, idx_t pos_id, std::vector<idx_t>& neg_ids, std::vector<idx_t> neg_tile,
         const std::shared_ptr<CFModules> cf_modules, memory::ThreadBuffer* t_buf, behavior_aggregators::BehaviorAggregator* behavior_aggregator,
         std::unordered_map<idx_t, std::vector<val_t> > & updated_emb_grads) = 0;
 

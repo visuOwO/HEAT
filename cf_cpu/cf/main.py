@@ -113,6 +113,7 @@ if __name__ == "__main__":
     print('--- Finished initializing aggregator weights ---')
 
     model = MatrixFactorization(cf_config, train_data.col_start, train_data.col_end)
+    test.test(str(train_data.num_users) + ' is the number of users')
     print('--- Finished initializing model ---')
 
     model.init_c_instance(cf_config)

@@ -1,0 +1,4 @@
+1. fix when updating negative embeddings, use mapped index instead of original index
+2. fix similar problem for positive embeddings
+3. fix that historical embeddings are not updated
+4. move an unused function to another file (previous solution)

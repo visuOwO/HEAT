@@ -75,6 +75,7 @@ struct ThreadBuffer
     val_t* neg_grad_buf;
     val_t* tiled_neg_emb_buf;   // tiled negative embeddings
     idx_t* pos_item_ids;
+    val_t* his_emb_buf;
 
     std::map<std::string, double> time_map;
 };
