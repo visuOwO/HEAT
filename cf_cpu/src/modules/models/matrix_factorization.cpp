@@ -250,7 +250,7 @@ namespace cf {
                     //val_t* neg_grad_ptr = item_embedding_grads->read_row(neg_id, t_buf->neg_grad_buf);
                     if (remote_item_embeddings_grads.find(neg_tile[neg_id]) == remote_item_embeddings_grads.end()) {
                         remote_item_embeddings_grads.insert(
-                                {neg_id, std::vector<val_t>(emb_dim, 0.0)});    // initialize gradients to 0
+                                {neg_tile[neg_id], std::vector<val_t>(emb_dim, 0.0)});    // initialize gradients to 0
                     }
                     val_t *neg_grad_ptr = remote_item_embeddings_grads[neg_tile[neg_id]].data();
                     Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb_grad(neg_grad_ptr, 1,
@@ -271,6 +271,9 @@ namespace cf {
                            //neg_embs(neg_idx, 3));
                     printf("loss_grad(0, neg_idx)=%f\n", loss_grad(0, neg_idx));
 
+                    /*printf("%f\n", user_grad_ptr[0]);
+                    printf("%f\n", pos_grad_ptr[0]);
+                    printf("%f\n", neg_grad_ptr[0]);*/
 
                     // regularize negative embedding
                     // neg_emb_grad += l2 * neg_embs.row(neg_idx);
@@ -279,6 +282,7 @@ namespace cf {
                     pos_emb_grad += loss_grad(0, neg_idx) * u_p_cos_p_grad;
                     neg_emb_grad += loss_grad(0, neg_idx) * u_n_cos_n_grad;
 
+
                     //cf_modules->optimizer->sparse_step(neg_embs.row(neg_idx).data(), neg_grad_ptr);
 
 
@@ -286,11 +290,12 @@ namespace cf {
                     // item_embedding_grads->write_row(neg_id, neg_grad_ptr);
                 }
 
-
+                //printf("test3\n");
                 behavior_aggregator->backward(user_grad_ptr);
                 end_time = omp_get_wtime();
                 t_buf->time_map["aggr_b"] = t_buf->time_map["aggr_b"] + (end_time - start_time);
                 start_time = end_time;
+                //printf("test4\n");
 
                 //printf("calculate aggr\n") ;
 
@@ -309,10 +314,10 @@ namespace cf {
                 cf_modules->optimizer->sparse_step(pos_emb_ptr, pos_grad_ptr);
 
                 // examine the weights that write to the embedding
-                printf("start examine the weights that write to the embedding\n");
+                /*printf("start examine the weights that write to the embedding\n");
                 printf("user_id=%lu, pos_id=%lu, neg_id=%lu\n", user_id, pos_id, neg_ids[0]);
                 printf("%f %f %f %f\n", user_emb_ptr[0], user_emb_ptr[1], user_emb_ptr[2], user_emb_ptr[3]);
-                printf("finish examine the weights that write to the embedding\n");
+                printf("finish examine the weights that write to the embedding\n");*/
 
                 user_embedding_weights->write_row(user_id, user_emb_ptr);
                 user_embedding_grads->write_row(user_id, user_grad_ptr);

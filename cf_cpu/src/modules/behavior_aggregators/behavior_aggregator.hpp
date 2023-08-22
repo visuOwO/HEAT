@@ -3,6 +3,7 @@
 #include <memory>
 #include <iostream>
 #include <Eigen/Dense>
+#include <unordered_map>
 
 #include "../../splatt/base.h"
 #include "../memory/array.hpp"
@@ -72,6 +73,7 @@ class BehaviorAggregator
     val_t* his_embs;
     val_t* his_grad;
 
+    std::vector<val_t> tiled_his_buf;
     std::vector<idx_t> his_ids;
     std::unordered_map<idx_t, idx_t> his_id_map;
 };

@@ -100,7 +100,7 @@ void BehaviorAggregator::forward(idx_t user_id, val_t* user_emb_ptr, embeddings:
         //memcpy(this->his_embs + idx0 * emb_dim, his_emb_ptr, emb_dim * sizeof(val_t));
 
         idx_t idx1 = his_id_map[his_id];
-        memcpy(this->his_embs + idx0 * emb_dim, t_buf->his_emb_buf + idx1 * emb_dim, emb_dim * sizeof(val_t));
+        memcpy(this->his_embs + idx0 * emb_dim, this->tiled_his_buf.data() + idx1 * emb_dim, emb_dim * sizeof(val_t));
     }
 
     Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> his_embs_arr(this->his_embs, this->num_his, emb_dim);

@@ -231,10 +231,11 @@ namespace cf {
                             }
                         }
 
+                        behavior_aggregator.tiled_his_buf.resize(his_items.size() * this->cf_config->emb_dim);
                         behavior_aggregator.his_ids.resize(his_items.size());
                         std::copy(his_items.begin(), his_items.end(), behavior_aggregator.his_ids.data());
                         //printf("start shuffling historical embeddings\n");
-                        Data_shuffle::shuffle_embs(behavior_aggregator.his_ids, t_buf->his_emb_buf, this->model->item_embedding);
+                        Data_shuffle::shuffle_embs(behavior_aggregator.his_ids, behavior_aggregator.tiled_his_buf.data(), this->model->item_embedding);
                         behavior_aggregator.his_id_map.clear();
                         for (int j = 0; j < behavior_aggregator.his_ids.size(); j++) {
                             behavior_aggregator.his_id_map[behavior_aggregator.his_ids[j]] = j;
