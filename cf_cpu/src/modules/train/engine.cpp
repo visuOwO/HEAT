@@ -18,7 +18,6 @@ void operator delete(void* memory, size_t size)
 
 namespace cf {
     namespace modules {
-        idx_t * Data_shuffle::process_status;
         idx_t Data_shuffle::total_cols;
         idx_t Data_shuffle::emb_dim;
         std::shared_ptr<CFModules> Data_shuffle::cf_modules;
@@ -116,22 +115,7 @@ namespace cf {
 
                 MPI_Win_fence(0, win);
 
-                MPI_Win win2;
-                idx_t *process_status;
-                MPI_Win_allocate_shared(sizeof(idx_t) * world_size, sizeof(idx_t),
-                                        MPI_INFO_NULL, shared_comm, &process_status, &win2);
 
-                for (int i = 0; i < world_size; ++i) {
-                    process_status[i] = 1;  // 1 means the process is still running
-                }
-
-                MPI_Win_fence(0, win2);
-
-                MPI_Aint size;
-                int disp_unit;
-                MPI_Win_shared_query(win2, 0, &size, &disp_unit, &process_status);
-
-                Data_shuffle::process_status = process_status;
                 Data_shuffle::total_cols = this->cf_config->num_items;
                 Data_shuffle::comm = MPI_COMM_WORLD;
                 Data_shuffle::world_size = world_size;
@@ -139,9 +123,8 @@ namespace cf {
                 Data_shuffle::emb_dim = this->cf_config->emb_dim;
                 Data_shuffle::cf_modules = this->cf_modules;
 
-                MPI_Win_fence(0, win2);
-
-
+                idx_t process_status = 1;   // 1 means the process is not finished
+                idx_t system_status;
 
                 const idx_t iterations = this->train_data->data_rows;
                 double loss = 0.;
@@ -188,6 +171,10 @@ namespace cf {
 
 
                     if (i % this->cf_config->refresh_interval == 0) {
+                        // synchronize the process status
+                        MPI_Allgather(&process_status, 1, MPI_UINT64_T, &system_status, 1, MPI_UINT64_T,
+                                      MPI_COMM_WORLD);
+
                         if (i % this->cf_config->refresh_interval == 0) {
                             // update the global item embeddings from local gradients
                             Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
@@ -333,20 +320,14 @@ namespace cf {
                     //printf("loss is %f\n", tmp);
 
                 }
-                process_status[rank] = 0;   // 0 means the process is finished
+                process_status = 0;   // 0 means the process is finished
                 loss = loss / iterations;
                 // keep sharing data until all the processes are finished
+                printf("finish training epoch from rank %d\n", rank);
                 while (true) {
-                    bool all_finished = true;
-                    MPI_Win_lock(MPI_LOCK_SHARED, rank, 0, win2);
-                    for (int i = 0; i < world_size; ++i) {
-                        if (Data_shuffle::process_status[i] == 1) {
-                            all_finished = false;
-                            break;
-                        }
-                    }
-                    MPI_Win_unlock(rank, win2);
-                    if (all_finished) {
+                    MPI_Allgather(&process_status, 1, MPI_UINT64_T, &system_status, 1, MPI_UINT64_T,
+                                  MPI_COMM_WORLD);
+                    if (system_status == 0) {
                         break;
                     } else {
                         // Keep sending and receiving data until all the processes are finished
@@ -358,8 +339,10 @@ namespace cf {
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(),
                                                    t_buf->tiled_neg_emb_buf,
                                                    this->model->item_embedding);
+                        Data_shuffle::shuffle_embs(std::vector<idx_t>(),
+                                                   t_buf->tiled_neg_emb_buf,
+                                                   this->model->item_embedding);
                         emb_grads.clear();
-
                     }
                 }
                 delete[] local_aggregator_weights;
