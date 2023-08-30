@@ -8,6 +8,7 @@
 #include <mpi.h>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include "splatt/base.h"
 #include "embeddings/embedding.hpp"
 #include "cf_modules.hpp"

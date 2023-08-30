@@ -242,7 +242,6 @@ namespace cf {
 
                 //printf("calculate neg gradient\n") ;
                 for (idx_t neg_idx = 0; neg_idx < neg_ids.size(); ++neg_idx) {
-                    //printf("test0\n");
                     idx_t neg_id = neg_ids[neg_idx];
                     // val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id, t_buf->neg_emb_buf0);
                     // Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb(neg_emb_ptr, 1, emb_dim);
@@ -265,11 +264,11 @@ namespace cf {
                             (neg_neg_dots(0, neg_idx) * user_emb - user_neg_dots(0, neg_idx) * neg_embs.row(neg_idx)) *
                             r_u_n3;
 
-                    printf("test2\n");
+                    // printf("test2\n");
 
                     //printf("neg_emb is %f %f %f %f\n", neg_embs(neg_idx, 0), neg_embs(neg_idx, 1), neg_embs(neg_idx, 2),
                            //neg_embs(neg_idx, 3));
-                    printf("loss_grad(0, neg_idx)=%f\n", loss_grad(0, neg_idx));
+                    // printf("loss_grad(0, neg_idx)=%f\n", loss_grad(0, neg_idx));
 
                     /*printf("%f\n", user_grad_ptr[0]);
                     printf("%f\n", pos_grad_ptr[0]);

@@ -164,7 +164,7 @@ namespace cf {
                 behavior_aggregators::BehaviorAggregator behavior_aggregator(train_data_ptr, aggregator_weights_ptr,
                                                                              cf_config);
 
-                std::cout << "start training" << std::endl;
+                // std::cout << "start training" << std::endl;
                 std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
 
                 for (idx_t i = 0; i < iterations; i++) {
@@ -291,7 +291,7 @@ namespace cf {
                     idx_t train_data_idx = this->positive_sampler->read(i);
                     //std::cout << "train_data_idx: " << train_data_idx << std::endl;
                     this->train_data->read_user_item(train_data_idx, user_id, item_id);
-                    printf("user_id: %lu item_id: %lu rank: %d\n", user_id, item_id, rank);
+                    //printf("user_id: %lu item_id: %lu rank: %d\n", user_id, item_id, rank);
                     negative_sampler->sampling(neg_ids);
                     auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
                     auto tmp = this->model->forward_backward(user_id, i % this->cf_config->refresh_interval, neg_ids, neg_tile,
@@ -323,7 +323,7 @@ namespace cf {
                 process_status = 0;   // 0 means the process is finished
                 loss = loss / iterations;
                 // keep sharing data until all the processes are finished
-                printf("finish training epoch from rank %d\n", rank);
+                //printf("finish training epoch from rank %d\n", rank);
                 while (true) {
                     MPI_Allgather(&process_status, 1, MPI_UINT64_T, &system_status, 1, MPI_UINT64_T,
                                   MPI_COMM_WORLD);

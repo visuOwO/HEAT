@@ -2,8 +2,7 @@
 // Created by hld on 7/20/23.
 //
 
-#include <map>
-#include <unordered_map>
+
 #include "Data_shuffle.h"
 #include <Eigen/Dense>
 
@@ -15,7 +14,6 @@ namespace cf {
         void
         Data_shuffle::shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> > &grads,
                                                     embeddings::Embedding *item_embeddings) {
-            MPI_Barrier(MPI_COMM_WORLD);
             std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
             //printf("update item grads, size is: %zu\n", grads.size());
             //std::vector<std::vector<idx_t>> grads_map(world_size, std::vector<idx_t>());
@@ -125,8 +123,7 @@ namespace cf {
                     memcpy(received_item_embeddings + idx_map[dst][j] * emb_dim, recv_data + j * emb_dim,
                            emb_dim * sizeof(val_t));
                 }
-                delete[] recv_data;
-            }
+             }
 
             // copy local embeddings
             for (auto i = 0; i < items_map[rank].size(); i++) {
@@ -194,6 +191,8 @@ namespace cf {
                 delete[] send_data;
             }
         }
+
+
 
         // request data from other ranks
 
