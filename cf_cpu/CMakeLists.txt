@@ -53,7 +53,8 @@ find_package(Eigen3 REQUIRED)
 set(EIGEN3_INCLUDE_DIR extern/eigen)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-add_library(cf ${CF_SOURCES})
+add_library(cf ${CF_SOURCES}
+        src/modules/utils/Async_Data_shuffle.cpp)
 
 add_subdirectory(extern/pybind11)
 file(GLOB PYBIND_SOURCES src/pybind/*.cpp)
