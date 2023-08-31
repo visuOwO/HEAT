@@ -39,7 +39,8 @@ if __name__ == "__main__":
 
     cf_config = CFConfig(emb_dim=model_config['embedding_dim'], num_negs=model_config['num_negs'],
                          max_his=model_config['max_his'], neg_sampler=model_config['neg_sampler'],
-                         tile_size=model_config['tile_size'], refresh_interval=model_config['refresh_interval'],
+                         tile_size=model_config['tile_size'], mini_batch_size=model_config['mini_batch_size'],
+                         refresh_interval=model_config['refresh_interval'],
                          l2=model_config['embedding_regularizer'], clip_val=model_config['clip_val'],
                          milestones=model_config['milestones'], l_r=model_config['learning_rate'])
 

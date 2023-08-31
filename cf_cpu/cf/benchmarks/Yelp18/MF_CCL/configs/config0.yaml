@@ -11,7 +11,8 @@ model_config:
     embedding_dim: 4
     neg_sampler: 1
     tile_size: 8
-    refresh_interval: 8192
+    mini_batch_size: 32
+    refresh_interval: 8
     embedding_dropout: 0
     similarity_score: dot
     loss: PairwiseLogisticLoss
@@ -24,5 +25,5 @@ model_config:
     net_regularizer: 0
     net_dropout: 0
     epochs: 8
-    eval_interval: 2
+    eval_interval: 10
     seed: 2022
