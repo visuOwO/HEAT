@@ -1,6 +1,5 @@
 #include "engine.hpp"
 #include "utils/Data_shuffle.h"
-#include <mpi.h>
 #include <set>
 
 /*static size_t totalMemoryUsed = 0;
@@ -141,8 +140,7 @@ namespace cf {
 
                 Eigen::initParallel();
 
-                idx_t user_id = 0;
-                idx_t item_id = 0;
+
                 std::vector<idx_t> neg_ids(num_negs);
                 idx_t seed = (this->epoch - 1) * this->train_data->data_rows;
 
@@ -169,104 +167,101 @@ namespace cf {
 
                 printf("start training, total iterations: %lu\n", iterations);
 
-                for (idx_t i = 0; i < iterations; i++) {
+                idx_t mini_batch_size = cf_config->mini_batch_size;
+                int num_thread = 2;
+                idx_t batch_size = mini_batch_size * num_thread;
 
+                for (idx_t i = 0; i < iterations; i += batch_size) {
 
-                    if (i % this->cf_config->refresh_interval == 0) {
-                        // synchronize the process status
-                        MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+                    MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
-                        if (i % this->cf_config->refresh_interval == 0) {
-                            // update the global item embeddings from local gradients
-                            Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
+                    Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
+                    emb_grads.clear();
+
+                    std::set<idx_t> users;
+                    std::vector<idx_t> pos_ids(batch_size);
+                    for (int j = 0; j < batch_size; j++) {
+                        if (i + j >= iterations) {
+                            break;
                         }
+                        idx_t id = this->positive_sampler->read(i + j);
+                        idx_t uid, iid;
+                        this->train_data->read_user_item(id, uid, iid);
+                        t_buf->pos_item_ids[j] = iid;
+                        if (users.find(uid) == users.end()) {
+                            users.insert(uid);
+                        }
+                    }
 
-                        emb_grads.clear();
-                        // Fetch next positive embedding for the next batch
-                        std::set<idx_t> users;
-                        std::vector<idx_t> pos_ids(this->cf_config->refresh_interval);
-                        for (int j = 0; j < this->cf_config->refresh_interval; j++) {
-                            if (i + j >= iterations) {
-                                break;
-                            }
-                            idx_t id = this->positive_sampler->read(i + j);
-                            idx_t uid, iid;
-                            this->train_data->read_user_item(id, uid, iid);
-                            t_buf->pos_item_ids[j] = iid;
-                            if (users.find(uid) == users.end()) {
-                                users.insert(uid);
+                    // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
+                    printf("start shuffling pos embeddings\n");
+                    Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
+                                                                                       this->cf_config->refresh_interval),
+                                               t_buf->pos_emb_buf,
+                                               this->model->item_embedding);
+
+
+                    // shuffle historical embeddings for next batch
+                    std::set<idx_t> his_items;
+                    memory::Array<idx_t> *historical_items = this->train_data->historical_items;
+                    auto his_id_buf = new idx_t[train_data_ptr->max_his];
+                    for (auto &user: users) {
+                        idx_t *his_ids = historical_items->read_row(user, his_id_buf);
+                        for (int j = 0; j < train_data_ptr->max_his; j++) {
+                            if (his_items.find(his_ids[j]) == his_items.end()) {
+                                his_items.insert(his_ids[j]);
                             }
                         }
+                    }
 
-                        // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
-                        //printf("start shuffling pos embeddings\n");
-                        Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
-                                                                                           this->cf_config->refresh_interval),
-                                                   t_buf->pos_emb_buf,
+                    behavior_aggregator.tiled_his_buf.resize(his_items.size() * this->cf_config->emb_dim);
+                    behavior_aggregator.his_ids.resize(his_items.size());
+                    std::copy(his_items.begin(), his_items.end(), behavior_aggregator.his_ids.data());
+                    //printf("start shuffling historical embeddings\n");
+                    Data_shuffle::shuffle_embs(behavior_aggregator.his_ids, behavior_aggregator.tiled_his_buf.data(),
+                                               this->model->item_embedding);
+                    behavior_aggregator.his_id_map.clear();
+                    for (int j = 0; j < behavior_aggregator.his_ids.size(); j++) {
+                        behavior_aggregator.his_id_map[behavior_aggregator.his_ids[j]] = j;
+                    }
+
+                    // assume that the negative sampler is random tile negative sampler
+
+                    //  just a test for reading an embedding
+                    printf("test for reading an embedding\n");
+                    // std::vector<val_t> emb(this->cf_config->emb_dim);
+                    /*this->model->item_embedding->read_weights(5+this->model->item_embedding->start_idx, emb.data());
+                    for (int j = 0; j < this->cf_config->emb_dim; j++) {
+                        printf("%f ", emb[j]);
+                    }
+                    printf("\n");*/
+
+                    if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
+                        nullptr) {
+                        auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
+                        //printf("start shuffling and updating neg grads\n");
+                        // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
+                        Data_shuffle::shuffle_embs(neg_tile, t_buf->tiled_neg_emb_buf,
                                                    this->model->item_embedding);
 
+                        /*printf("start inspecting negative embeddings\n");
 
-                        // shuffle historical embeddings for next batch
-                        std::set<idx_t> his_items;
-                        memory::Array<idx_t>* historical_items = this->train_data->historical_items;
-                        auto his_id_buf = new idx_t[train_data_ptr->max_his];
-                        for (auto &user: users) {
-                            idx_t* his_ids = historical_items->read_row(user_id, his_id_buf);
-                            for (int j = 0; j < train_data_ptr->max_his; j++) {
-                                if (his_items.find(his_ids[j]) == his_items.end()) {
-                                    his_items.insert(his_ids[j]);
-                                }
-                            }
+                        for (auto j = 0; j < this->cf_config->tile_size; j++) {
+                            printf("%lu ", neg_tile[j]);
+                        }
+                        printf("\n");
+                        // inspect the negative embeddings
+                        for (auto j = 0; j < this->cf_config->tile_size; j++) {
+                            printf("negative embedding %d %d, %f %f %f %f\n", j, rank, t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim],
+                                   t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 1],
+                                   t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 2],
+                                   t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 3]);
                         }
 
-                        behavior_aggregator.tiled_his_buf.resize(his_items.size() * this->cf_config->emb_dim);
-                        behavior_aggregator.his_ids.resize(his_items.size());
-                        std::copy(his_items.begin(), his_items.end(), behavior_aggregator.his_ids.data());
-                        //printf("start shuffling historical embeddings\n");
-                        Data_shuffle::shuffle_embs(behavior_aggregator.his_ids, behavior_aggregator.tiled_his_buf.data(), this->model->item_embedding);
-                        behavior_aggregator.his_id_map.clear();
-                        for (int j = 0; j < behavior_aggregator.his_ids.size(); j++) {
-                            behavior_aggregator.his_id_map[behavior_aggregator.his_ids[j]] = j;
-                        }
+                        printf("finish inspecting negative embeddings\n");*/
 
-                        // assume that the negative sampler is random tile negative sampler
-
-                        //  just a test for reading an embedding
-                        //printf("test for reading an embedding\n");
-                        std::vector<val_t> emb(this->cf_config->emb_dim);
-                        /*this->model->item_embedding->read_weights(5+this->model->item_embedding->start_idx, emb.data());
-                        for (int j = 0; j < this->cf_config->emb_dim; j++) {
-                            printf("%f ", emb[j]);
-                        }
-                        printf("\n");*/
-
-                        if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
-                            nullptr) {
-                            auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
-                            //printf("start shuffling and updating neg grads\n");
-                            // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
-                            Data_shuffle::shuffle_embs(neg_tile,t_buf->tiled_neg_emb_buf,
-                                                       this->model->item_embedding);
-
-                            /*printf("start inspecting negative embeddings\n");
-
-                            for (auto j = 0; j < this->cf_config->tile_size; j++) {
-                                printf("%lu ", neg_tile[j]);
-                            }
-                            printf("\n");
-                            // inspect the negative embeddings
-                            for (auto j = 0; j < this->cf_config->tile_size; j++) {
-                                printf("negative embedding %d %d, %f %f %f %f\n", j, rank, t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim],
-                                       t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 1],
-                                       t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 2],
-                                       t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 3]);
-                            }
-
-                            printf("finish inspecting negative embeddings\n");*/
-
-                        } else {
-                            throw std::runtime_error("Only support random tile negative sampler");
-                        }
+                    } else {
+                        throw std::runtime_error("Only support random tile negative sampler");
                     }
 
                     // try to examine all user embeddings
@@ -289,17 +284,30 @@ namespace cf {
                     // start training
                     // printf("start forward and backward\n")  ;
                     // std::cout << "iteration: " << i << std::endl;
-                    idx_t train_data_idx = this->positive_sampler->read(i);
-                    //std::cout << "train_data_idx: " << train_data_idx << std::endl;
-                    this->train_data->read_user_item(train_data_idx, user_id, item_id);
-                    //printf("user_id: %lu item_id: %lu rank: %d\n", user_id, item_id, rank);
-                    negative_sampler->sampling(neg_ids);
-                    auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
-                    auto tmp = this->model->forward_backward(user_id, i % this->cf_config->refresh_interval, neg_ids, neg_tile,
-                                                          this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
 
-                    //printf("finish forward and backward\n")  ;
-                    local_loss = local_loss + tmp;
+#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(behavior_aggregator, t_buf, emb_grads)
+
+                    for (idx_t j = 0; j < batch_size; j++) {
+                        idx_t user_id = 0;
+                        idx_t item_id = 0;
+                        if (i + j >= iterations) {
+                            continue;
+                        }
+                        // printf("start training iteration %lu\n", i+j);
+                        idx_t train_data_idx = this->positive_sampler->read(i+j);
+                        this->train_data->read_user_item(train_data_idx, user_id, item_id);
+                        //printf("user_id: %lu item_id: %lu rank: %d\n", user_id, item_id, rank);
+                        negative_sampler->sampling(neg_ids);
+                        auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
+                        auto tmp = this->model->forward_backward(user_id, (i+j) % batch_size,
+                                                                 neg_ids,
+                                                                 neg_tile,
+                                                                 this->cf_modules, t_buf, &behavior_aggregator,
+                                                                 emb_grads);
+
+                        //printf("finish forward and backward\n")  ;
+                        local_loss = local_loss + tmp;
+                    }
 
                     /*printf("start examine aggregated weights\n");
                     for (int j = 0; j < this->cf_config->emb_dim; j++) {

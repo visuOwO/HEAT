@@ -12,7 +12,7 @@ model_config:
     neg_sampler: 1
     tile_size: 8
     mini_batch_size: 32
-    refresh_interval: 8
+    refresh_interval: 512
     embedding_dropout: 0
     similarity_score: dot
     loss: PairwiseLogisticLoss
