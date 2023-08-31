@@ -89,7 +89,7 @@ namespace cf {
                 MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
                 //initialize shared memory for MPI
-                MPI_Comm shared_comm;
+                /*MPI_Comm shared_comm;
                 MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &shared_comm);
 
                 MPI_Win win;
@@ -104,16 +104,16 @@ namespace cf {
                     }
                 }
 
-                MPI_Win_fence(0, win);
+                MPI_Win_fence(0, win);*/
 
                 // copy the shared memory to local memory
-                val_t *local_aggregator_weights;
+                /*val_t *local_aggregator_weights;
                 local_aggregator_weights = new val_t[this->cf_config->emb_dim * this->cf_config->emb_dim];
                 memcpy(local_aggregator_weights, shared_aggregated_weights,
-                       sizeof(val_t) * this->cf_config->emb_dim * this->cf_config->emb_dim);
+                       sizeof(val_t) * this->cf_config->emb_dim * this->cf_config->emb_dim);*/
 
 
-                MPI_Win_fence(0, win);
+                //MPI_Win_fence(0, win);
 
 
                 Data_shuffle::total_cols = this->cf_config->num_items;
@@ -167,13 +167,14 @@ namespace cf {
                 // std::cout << "start training" << std::endl;
                 std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
 
+                printf("start training, total iterations: %lu\n", iterations);
+
                 for (idx_t i = 0; i < iterations; i++) {
 
 
                     if (i % this->cf_config->refresh_interval == 0) {
                         // synchronize the process status
-                        MPI_Allgather(&process_status, 1, MPI_UINT64_T, &system_status, 1, MPI_UINT64_T,
-                                      MPI_COMM_WORLD);
+                        MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
                         if (i % this->cf_config->refresh_interval == 0) {
                             // update the global item embeddings from local gradients
@@ -286,8 +287,8 @@ namespace cf {
                     }*/
 
                     // start training
-                    //printf("start forward and backward\n")  ;
-                    //std::cout << "iteration: " << i << std::endl;
+                    // printf("start forward and backward\n")  ;
+                    // std::cout << "iteration: " << i << std::endl;
                     idx_t train_data_idx = this->positive_sampler->read(i);
                     //std::cout << "train_data_idx: " << train_data_idx << std::endl;
                     this->train_data->read_user_item(train_data_idx, user_id, item_id);
@@ -317,16 +318,21 @@ namespace cf {
                         behavior_aggregator.weights0_grad_accu.setZero();   // reset the gradient accumulator
                     }*/
 
-                    //printf("local_loss is %f\n", tmp);
+                    //("local_loss is %f\n", tmp);
 
+                    // free the memory of historical embeddings
+                    behavior_aggregator.tiled_his_buf.clear();
+                    behavior_aggregator.his_ids.clear();
+                    behavior_aggregator.his_id_map.clear();
                 }
                 process_status = 0;   // 0 means the process is finished
                 //local_loss = local_loss / iterations;
                 // keep sharing data until all the processes are finished
                 //printf("finish training epoch from rank %d\n", rank);
+                emb_grads.clear();
                 while (true) {
-                    MPI_Allgather(&process_status, 1, MPI_UINT64_T, &system_status, 1, MPI_UINT64_T,
-                                  MPI_COMM_WORLD);
+                    MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+                    //printf("system_status: %d\n", system_status) ;
                     if (system_status == 0) {
                         break;
                     } else {
@@ -345,13 +351,19 @@ namespace cf {
                         emb_grads.clear();
                     }
                 }
-                delete[] local_aggregator_weights;
+
+                // delete[] local_aggregator_weights;
                 double global_loss;
                 idx_t total_iteration;
                 MPI_Allreduce(&local_loss, &global_loss, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
                 MPI_Allreduce(&iterations, &total_iteration, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
                 global_loss = global_loss / total_iteration;
-                return local_loss;
+
+                // free memory
+                delete negative_sampler;
+                delete t_buf;
+
+                return global_loss;
             }
 
             void Engine::evaluate0() {

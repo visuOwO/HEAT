@@ -139,6 +139,11 @@ namespace cf {
                 printf("\n");*/
                 delete[] updated_item_embeddings;
             }
+
+            // free memory
+            for (auto i = 0; i < world_size; i++) {
+                delete[] received_data[i];
+            }
         }
 
         // request data from other ranks
@@ -203,12 +208,12 @@ namespace cf {
                                         std::vector<idx_t> &recv_cols) {
             idx_t send_count = cols.size();
             idx_t recv_count;
-            printf("rank %d, send_count is %lu\n", rank, send_count);
+            //printf("rank %d, send_count is %lu\n", rank, send_count);
             if (rank < dst_rank) {
                 MPI_Send((void *) &send_count, 1, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) cols.data(), send_count, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) send_data, send_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);
-                printf("finish sending from rank %d\n", rank);
+                //printf("finish sending from rank %d\n", rank);
                 MPI_Recv((void *) &recv_count, 1, MPI_UINT64_T, dst_rank, 0, comm, MPI_STATUS_IGNORE);
                 recv_cols.resize(recv_count);
                 MPI_Recv((void *) recv_cols.data(), recv_count, MPI_UINT64_T, dst_rank, 0, comm,
@@ -222,7 +227,7 @@ namespace cf {
                 MPI_Recv((void *) recv_cols.data(), recv_count, MPI_UINT64_T, dst_rank, 0, comm,
                          MPI_STATUS_IGNORE);
                 MPI_Recv((void *) recv_data, recv_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm, MPI_STATUS_IGNORE);
-                printf("finish receiving from rank %d\n", rank);
+                //printf("finish receiving from rank %d\n", rank);
                 MPI_Send((void *) &send_count, 1, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) cols.data(), send_count, MPI_UINT64_T, dst_rank, 0, comm);
                 MPI_Send((void *) send_data, send_count * emb_dim, MPI_FLOAT, dst_rank, 0, comm);

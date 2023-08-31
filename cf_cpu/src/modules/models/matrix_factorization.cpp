@@ -328,6 +328,9 @@ namespace cf {
                 t_buf->time_map["backward"] = t_buf->time_map["backward"] + (end_time - backward_time);
                 t_buf->time_map["f_b"] = t_buf->time_map["f_b"] + (end_time - f_b_time);
 
+                // free memory
+                delete[] user_emb_buf;
+
                 return loss;
             }
 
