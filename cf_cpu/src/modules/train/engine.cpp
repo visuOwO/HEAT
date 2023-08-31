@@ -127,7 +127,7 @@ namespace cf {
                 idx_t system_status;
 
                 const idx_t iterations = this->train_data->data_rows;
-                double loss = 0.;
+                double local_loss = 0.;
                 idx_t num_negs = this->cf_config->num_negs;
 
                 datasets::Dataset *train_data_ptr = this->train_data.get();
@@ -298,7 +298,7 @@ namespace cf {
                                                           this->cf_modules, t_buf, &behavior_aggregator, emb_grads);
 
                     //printf("finish forward and backward\n")  ;
-                    loss = loss + tmp;
+                    local_loss = local_loss + tmp;
 
                     /*printf("start examine aggregated weights\n");
                     for (int j = 0; j < this->cf_config->emb_dim; j++) {
@@ -317,11 +317,11 @@ namespace cf {
                         behavior_aggregator.weights0_grad_accu.setZero();   // reset the gradient accumulator
                     }*/
 
-                    //printf("loss is %f\n", tmp);
+                    //printf("local_loss is %f\n", tmp);
 
                 }
                 process_status = 0;   // 0 means the process is finished
-                loss = loss / iterations;
+                //local_loss = local_loss / iterations;
                 // keep sharing data until all the processes are finished
                 //printf("finish training epoch from rank %d\n", rank);
                 while (true) {
@@ -346,7 +346,12 @@ namespace cf {
                     }
                 }
                 delete[] local_aggregator_weights;
-                return loss;
+                double global_loss;
+                idx_t total_iteration;
+                MPI_Allreduce(&local_loss, &global_loss, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                MPI_Allreduce(&iterations, &total_iteration, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+                global_loss = global_loss / total_iteration;
+                return local_loss;
             }
 
             void Engine::evaluate0() {
