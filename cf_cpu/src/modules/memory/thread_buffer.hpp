@@ -15,7 +15,7 @@ namespace memory
 
 struct ThreadBuffer
 {
-    ThreadBuffer(idx_t emb_dim, idx_t num_negs, idx_t refresh_interval, idx_t tile_size)
+    ThreadBuffer(idx_t emb_dim, idx_t num_negs, idx_t batch_size, idx_t tile_size)
     {
         this->emb_dim = emb_dim;
         this->num_negs = num_negs;
@@ -28,8 +28,8 @@ struct ThreadBuffer
         // neg_grad_buf = static_cast<val_t*>(splatt_malloc(num_negs * emb_dim * sizeof(val_t)));
         neg_grad_buf = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
         tiled_neg_emb_buf = static_cast<val_t*>(splatt_malloc(tile_size * emb_dim * sizeof(val_t)));
-        pos_item_ids = static_cast<idx_t*>(splatt_malloc(refresh_interval * sizeof(idx_t)));   // this should be the batch size, not tile size
-        pos_emb_buf = static_cast<val_t*>(splatt_malloc(refresh_interval * emb_dim * sizeof(val_t)));   // positive
+        pos_item_ids = static_cast<idx_t*>(splatt_malloc(batch_size * sizeof(idx_t)));   // this should be the batch size, not tile size
+        pos_emb_buf = static_cast<val_t*>(splatt_malloc(batch_size * emb_dim * sizeof(val_t)));   // positive
 
 
         time_map["data"] = 0.0;

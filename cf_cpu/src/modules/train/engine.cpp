@@ -125,6 +125,10 @@ namespace cf {
                 idx_t process_status = 1;   // 1 means the process is not finished
                 idx_t system_status;
 
+                idx_t mini_batch_size = cf_config->mini_batch_size;
+                int num_thread = 2;
+                idx_t batch_size = mini_batch_size * num_thread;
+
                 const idx_t iterations = this->train_data->data_rows;
                 double local_loss = 0.;
                 idx_t num_negs = this->cf_config->num_negs;
@@ -155,7 +159,7 @@ namespace cf {
                 }
 
                 memory::ThreadBuffer *t_buf = new memory::ThreadBuffer(this->cf_config->emb_dim, num_negs,
-                                                                       this->cf_config->refresh_interval,
+                                                                       batch_size,
                                                                        this->cf_config->tile_size);
 
                 // behavior_aggregators::BehaviorAggregator* behavior_aggregator = nullptr;
@@ -165,11 +169,9 @@ namespace cf {
                 // std::cout << "start training" << std::endl;
                 std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
 
-                printf("start training, total iterations: %lu\n", iterations);
+                //printf("start training, total iterations: %lu\n", iterations);
 
-                idx_t mini_batch_size = cf_config->mini_batch_size;
-                int num_thread = 2;
-                idx_t batch_size = mini_batch_size * num_thread;
+
 
                 for (idx_t i = 0; i < iterations; i += batch_size) {
 
@@ -191,12 +193,15 @@ namespace cf {
                         if (users.find(uid) == users.end()) {
                             users.insert(uid);
                         }
+                        if (emb_grads.find(iid) == emb_grads.end()) {
+                            emb_grads[iid] = std::vector<val_t>(this->cf_config->emb_dim, 0.0);
+                        }
                     }
 
                     // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
-                    printf("start shuffling pos embeddings\n");
+                    //printf("start shuffling pos embeddings\n");
                     Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
-                                                                                       this->cf_config->refresh_interval),
+                                                                                       batch_size),
                                                t_buf->pos_emb_buf,
                                                this->model->item_embedding);
 
@@ -228,7 +233,7 @@ namespace cf {
                     // assume that the negative sampler is random tile negative sampler
 
                     //  just a test for reading an embedding
-                    printf("test for reading an embedding\n");
+                    //printf("test for reading an embedding\n");
                     // std::vector<val_t> emb(this->cf_config->emb_dim);
                     /*this->model->item_embedding->read_weights(5+this->model->item_embedding->start_idx, emb.data());
                     for (int j = 0; j < this->cf_config->emb_dim; j++) {
@@ -264,28 +269,15 @@ namespace cf {
                         throw std::runtime_error("Only support random tile negative sampler");
                     }
 
-                    // try to examine all user embeddings
-                    /*if (i % this->cf_config->refresh_interval == 0) {
-                        for (int j = 0; j < this->cf_config->num_users; j++) {
-                            std::vector<val_t> emb(this->cf_config->emb_dim);
-                            this->model->user_embedding->weights->read_row(j-this->model->user_embedding->start_idx, emb.data());
-                            for (int k = 0; k < this->cf_config->emb_dim; k++) {
-                                if (emb[k] == nanf("")) {
-                                    printf("nan at %d %d\n", j, k);
-                                    continue;
-                                }
-                                printf("%f ", emb[k]);
-                            }
-                            printf("\n");
+                    auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
+                    for (auto neg_id: neg_tile) {
+                        if (emb_grads.find(neg_id) == emb_grads.end()) {
+                            emb_grads[neg_id] = std::vector<val_t>(this->cf_config->emb_dim, 0.0);
                         }
-                        break;
-                    }*/
+                    }
 
-                    // start training
-                    // printf("start forward and backward\n")  ;
-                    // std::cout << "iteration: " << i << std::endl;
 
-#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(behavior_aggregator, t_buf, emb_grads)
+#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i,behavior_aggregator, t_buf, emb_grads, neg_tile)
 
                     for (idx_t j = 0; j < batch_size; j++) {
                         idx_t user_id = 0;
@@ -298,7 +290,6 @@ namespace cf {
                         this->train_data->read_user_item(train_data_idx, user_id, item_id);
                         //printf("user_id: %lu item_id: %lu rank: %d\n", user_id, item_id, rank);
                         negative_sampler->sampling(neg_ids);
-                        auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
                         auto tmp = this->model->forward_backward(user_id, (i+j) % batch_size,
                                                                  neg_ids,
                                                                  neg_tile,
@@ -337,6 +328,7 @@ namespace cf {
                 //local_loss = local_loss / iterations;
                 // keep sharing data until all the processes are finished
                 //printf("finish training epoch from rank %d\n", rank);
+                //printf("finish training epoch\n")   ;
                 emb_grads.clear();
                 while (true) {
                     MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
