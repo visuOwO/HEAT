@@ -87,6 +87,13 @@ namespace cf {
                 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
                 MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
+                std::unordered_map<std::string, double> time_map;
+                time_map["shuffle_and_update_item_grads"] = 0.0;
+                time_map["shuffle_embs"] = 0.0;
+                time_map["shuffle_his_embs"] = 0.0;
+                time_map["forward_backward"] = 0.0;
+                time_map["shuffle_negs"] = 0.0;
+                time_map["init"] = 0.0;
                 //initialize shared memory for MPI
                 /*MPI_Comm shared_comm;
                 MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &shared_comm);
@@ -114,6 +121,9 @@ namespace cf {
 
                 //MPI_Win_fence(0, win);
 
+                double start_time, end_time;
+
+                start_time = MPI_Wtime();
 
                 Data_shuffle::total_cols = this->cf_config->num_items;
                 Data_shuffle::comm = MPI_COMM_WORLD;
@@ -171,15 +181,21 @@ namespace cf {
 
                 //printf("start training, total iterations: %lu\n", iterations);
 
-
+                end_time = MPI_Wtime();
+                time_map["init"] += end_time - start_time;
 
                 for (idx_t i = 0; i < iterations; i += batch_size) {
 
                     MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
+                    start_time = MPI_Wtime();
                     Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
+                    end_time = MPI_Wtime();
+                    time_map["shuffle_and_update_item_grads"] += end_time - start_time;
+
                     emb_grads.clear();
 
+                    start_time = MPI_Wtime();
                     std::set<idx_t> users;
                     std::vector<idx_t> pos_ids(batch_size);
                     for (int j = 0; j < batch_size; j++) {
@@ -205,8 +221,12 @@ namespace cf {
                                                t_buf->pos_emb_buf,
                                                this->model->item_embedding);
 
+                    end_time = MPI_Wtime();
+                    time_map["shuffle_embs"] += end_time - start_time;
+
 
                     // shuffle historical embeddings for next batch
+                    start_time = MPI_Wtime();
                     std::set<idx_t> his_items;
                     memory::Array<idx_t> *historical_items = this->train_data->historical_items;
                     auto his_id_buf = new idx_t[train_data_ptr->max_his];
@@ -229,6 +249,8 @@ namespace cf {
                     for (int j = 0; j < behavior_aggregator.his_ids.size(); j++) {
                         behavior_aggregator.his_id_map[behavior_aggregator.his_ids[j]] = j;
                     }
+                    end_time = MPI_Wtime();
+                    time_map["shuffle_his_embs"] += end_time - start_time;
 
                     // assume that the negative sampler is random tile negative sampler
 
@@ -243,11 +265,14 @@ namespace cf {
 
                     if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
                         nullptr) {
+                        start_time = MPI_Wtime();
                         auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
                         //printf("start shuffling and updating neg grads\n");
                         // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
                         Data_shuffle::shuffle_embs(neg_tile, t_buf->tiled_neg_emb_buf,
                                                    this->model->item_embedding);
+                        end_time = MPI_Wtime();
+                        time_map["shuffle_negs"] += end_time - start_time;
 
                         /*printf("start inspecting negative embeddings\n");
 
@@ -276,7 +301,7 @@ namespace cf {
                         }
                     }
 
-
+                    start_time = MPI_Wtime();
 #pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i,behavior_aggregator, t_buf, emb_grads, neg_tile)
 
                     for (idx_t j = 0; j < batch_size; j++) {
@@ -299,6 +324,8 @@ namespace cf {
                         //printf("finish forward and backward\n")  ;
                         local_loss = local_loss + tmp;
                     }
+                    end_time = MPI_Wtime();
+                    time_map["forward_backward"] += end_time - start_time;
 
                     /*printf("start examine aggregated weights\n");
                     for (int j = 0; j < this->cf_config->emb_dim; j++) {
@@ -362,6 +389,13 @@ namespace cf {
                 // free memory
                 delete negative_sampler;
                 delete t_buf;
+
+                printf("init time: %f\n", time_map["init"]);
+                printf("shuffle_and_update_item_grads time: %f\n", time_map["shuffle_and_update_item_grads"]);
+                printf("shuffle_embs time: %f\n", time_map["shuffle_embs"]);
+                printf("shuffle_his_embs time: %f\n", time_map["shuffle_his_embs"]);
+                printf("forward_backward time: %f\n", time_map["forward_backward"]);
+                printf("shuffle_negs time: %f\n", time_map["shuffle_negs"]);
 
                 return global_loss;
             }

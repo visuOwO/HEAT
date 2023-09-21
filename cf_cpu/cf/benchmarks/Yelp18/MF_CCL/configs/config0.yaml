@@ -10,7 +10,7 @@ model_config:
     max_his: 100
     embedding_dim: 4
     neg_sampler: 1
-    tile_size: 8
+    tile_size: 32
     mini_batch_size: 32
     refresh_interval: 512
     embedding_dropout: 0
