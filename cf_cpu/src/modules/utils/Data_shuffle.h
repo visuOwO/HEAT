@@ -28,7 +28,7 @@ namespace cf {
 
 
             static void shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> >& grads,
-                                                      embeddings::Embedding *item_embeddings, idx_t total_nums);
+                                                      embeddings::Embedding *embeddings, idx_t total_nums);
 
             static void shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,
                                      embeddings::Embedding *item_embeddings, idx_t total_nums);

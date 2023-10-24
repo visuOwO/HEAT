@@ -11,7 +11,7 @@ model_config:
     embedding_dim: 4
     neg_sampler: 1
     tile_size: 32
-    mini_batch_size: 32
+    mini_batch_size: 4
     refresh_interval: 512
     embedding_dropout: 0
     similarity_score: dot

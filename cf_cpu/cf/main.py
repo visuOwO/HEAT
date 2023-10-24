@@ -127,7 +127,6 @@ if __name__ == "__main__":
     for epoch in range(model_config['epochs']):
         start_time = time.time()
 
-        test.test("start training epoch")
         epoch_loss = engine.train_one_epoch()
 
         epoch_time = time.time() - start_time

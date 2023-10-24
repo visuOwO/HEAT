@@ -19,7 +19,7 @@ namespace cf {
                                                         std::unordered_map<idx_t, std::vector<val_t> > &remote_item_embeddings_grads, // to store gradients of embeddings
                                                         std::unordered_map<idx_t, std::vector<val_t> > &remote_user_embeddings_grads
             ) {
-                //printf("MatrixFactorization::forward_backward\n");
+                printf("MatrixFactorization::forward_backward\n");
                 double start_time = omp_get_wtime();
                 double forward_time = start_time;
                 double f_b_time = start_time;
@@ -48,6 +48,8 @@ namespace cf {
                 Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> pos_emb_grad(pos_grad_ptr, 1,
                                                                                                   emb_dim);
 
+
+                printf("finish preparing emb and grad\n");
 
                 double end_time = omp_get_wtime();
                 t_buf->time_map["read_emb"] = t_buf->time_map["read_emb"] + (end_time - start_time);
@@ -112,7 +114,7 @@ namespace cf {
                 t_buf->time_map["dot"] = t_buf->time_map["dot"] + (end_time - start_time);
                 start_time = end_time;
 
-
+                printf("test1\n");
 
                 // compute user negative cosine similarity, score
 
@@ -153,6 +155,7 @@ namespace cf {
                 // Eigen::Matrix<val_t, 1, Eigen::Dynamic> neg_emb_grad = Eigen::Matrix<val_t, 1, Eigen::Dynamic>::Zero(1, emb_dim);
                 const val_t l2 = cf_modules->cf_config->l2;
 
+                printf("test2\n");
                 for (idx_t neg_idx = 0; neg_idx < neg_ids.size(); ++neg_idx) {
                     idx_t neg_id = neg_ids[neg_idx];
                     //val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id, t_buf->neg_emb_buf0);

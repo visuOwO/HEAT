@@ -111,7 +111,7 @@ namespace cf {
                 idx_t system_status;
 
                 idx_t mini_batch_size = cf_config->mini_batch_size;
-                int num_thread = 2;
+                int num_thread = 1;
                 idx_t batch_size = mini_batch_size * num_thread;
 
                 const idx_t iterations = this->train_data->data_rows;
@@ -158,11 +158,15 @@ namespace cf {
                 end_time = MPI_Wtime();
                 time_map["init"] += end_time - start_time;
 
+                printf("start training\n");
                 for (idx_t i = 0; i < iterations; i += batch_size) {
 
                     MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
                     start_time = MPI_Wtime();
+
+                    printf("start updating gradients\n");
+
                     Data_shuffle::shuffle_and_update_item_grads(item_emb_grads, model->item_embedding,
                                                                 this->cf_config->num_items);
                     Data_shuffle::shuffle_and_update_item_grads(user_emb_grads, model->user_embedding,
@@ -190,10 +194,10 @@ namespace cf {
                         }
                     }
 
-                    //
+
 
                     // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
-                    //printf("start shuffling pos embeddings\n");
+                    printf("start shuffling pos embeddings from rank %d\n", rank);
                     Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                        batch_size),
                                                t_buf->pos_emb_buf,
@@ -208,6 +212,7 @@ namespace cf {
                     time_map["shuffle_embs"] += end_time - start_time;
 
                     start_time = MPI_Wtime();
+                    printf("finish preparing data from rank %d\n", rank);
 #pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i, behavior_aggregator, t_buf, item_emb_grads)
 
                     for (idx_t j = 0; j < batch_size; j++) {
@@ -229,6 +234,7 @@ namespace cf {
                     }
                     end_time = MPI_Wtime();
                     time_map["forward_backward"] += end_time - start_time;
+                    printf("finish forward_backward from rank %d\n", rank);
                 }
                 process_status = 0;   // 0 means the process is finished
                 item_emb_grads.clear();

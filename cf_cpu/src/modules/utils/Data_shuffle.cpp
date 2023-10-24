@@ -13,7 +13,7 @@ namespace cf {
         // shuffle gradients from other ranks and update local embeddings
         void
         Data_shuffle::shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> > &grads,
-                                                    embeddings::Embedding *item_embeddings, idx_t total_nums) {
+                                                    embeddings::Embedding *embeddings, idx_t total_nums) {
             std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
             //printf("update item grads, size is: %zu\n", grads.size());
             //std::vector<std::vector<idx_t>> grads_map(world_size, std::vector<idx_t>());
@@ -44,7 +44,7 @@ namespace cf {
             // update local embeddings
             for (auto i: grads_map[rank]) {
                 auto *updated_item_embeddings = new val_t[emb_dim];
-                item_embeddings->weights->read_row(i - item_embeddings->start_idx, updated_item_embeddings);
+                embeddings->weights->read_row(i - embeddings->start_idx, updated_item_embeddings);
                 /*for (idx_t j = 0; j < emb_dim; j++) {
                     printf("%f ", updated_item_embeddings[j]);
                 }
@@ -56,7 +56,7 @@ namespace cf {
                 printf("\n");
                 printf("000\n");*/
 
-                item_embeddings->weights->write_row(i - item_embeddings->start_idx, updated_item_embeddings);
+                embeddings->weights->write_row(i - embeddings->start_idx, updated_item_embeddings);
             }
 
 
@@ -74,11 +74,11 @@ namespace cf {
                         recv_data, recv_cols.size(), emb_dim);
                 for (idx_t j = 0; j < recv_cols.size(); j++) {
                     auto *updated_item_embeddings = new val_t[emb_dim];
-                    item_embeddings->weights->read_row(recv_cols[j] - item_embeddings->start_idx,
-                                                       updated_item_embeddings);
+                    embeddings->weights->read_row(recv_cols[j] - embeddings->start_idx,
+                                                  updated_item_embeddings);
                     cf_modules->optimizer->sparse_step(updated_item_embeddings, recv_data + j * emb_dim);
-                    item_embeddings->weights->write_row(recv_cols[j] - item_embeddings->start_idx,
-                                                        updated_item_embeddings);
+                    embeddings->weights->write_row(recv_cols[j] - embeddings->start_idx,
+                                                   updated_item_embeddings);
                     delete[] updated_item_embeddings;
                 }
                 delete[] recv_data;
