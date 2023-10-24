@@ -1,6 +1,7 @@
 #include "engine.hpp"
 #include "utils/Data_shuffle.h"
 #include <set>
+#include <unordered_set>
 
 /*static size_t totalMemoryUsed = 0;
 
@@ -17,7 +18,7 @@ void operator delete(void* memory, size_t size)
 
 namespace cf {
     namespace modules {
-        idx_t Data_shuffle::total_cols;
+        idx_t Data_shuffle::num_items;
         idx_t Data_shuffle::emb_dim;
         std::shared_ptr<CFModules> Data_shuffle::cf_modules;
         MPI_Comm Data_shuffle::comm;
@@ -94,38 +95,12 @@ namespace cf {
                 time_map["forward_backward"] = 0.0;
                 time_map["shuffle_negs"] = 0.0;
                 time_map["init"] = 0.0;
-                //initialize shared memory for MPI
-                /*MPI_Comm shared_comm;
-                MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &shared_comm);
-
-                MPI_Win win;
-                val_t *shared_aggregated_weights;
-                MPI_Win_allocate_shared(sizeof(val_t) * this->cf_config->emb_dim * this->cf_config->emb_dim,
-                                        sizeof(val_t),
-                                        MPI_INFO_NULL, shared_comm, &shared_aggregated_weights, &win);
-
-                if (rank == 0) {
-                    for (int i = 0; i < this->cf_config->emb_dim * this->cf_config->emb_dim; ++i) {
-                        shared_aggregated_weights[i] = this->aggregator_weights->weights0.data()[i];
-                    }
-                }
-
-                MPI_Win_fence(0, win);*/
-
-                // copy the shared memory to local memory
-                /*val_t *local_aggregator_weights;
-                local_aggregator_weights = new val_t[this->cf_config->emb_dim * this->cf_config->emb_dim];
-                memcpy(local_aggregator_weights, shared_aggregated_weights,
-                       sizeof(val_t) * this->cf_config->emb_dim * this->cf_config->emb_dim);*/
-
-
-                //MPI_Win_fence(0, win);
 
                 double start_time, end_time;
 
                 start_time = MPI_Wtime();
 
-                Data_shuffle::total_cols = this->cf_config->num_items;
+                Data_shuffle::num_items = this->cf_config->num_items;
                 Data_shuffle::comm = MPI_COMM_WORLD;
                 Data_shuffle::world_size = world_size;
                 Data_shuffle::rank = rank;
@@ -154,15 +129,15 @@ namespace cf {
 
                 Eigen::initParallel();
 
-
                 std::vector<idx_t> neg_ids(num_negs);
                 idx_t seed = (this->epoch - 1) * this->train_data->data_rows;
+                idx_t tile_space = this->model->item_embedding->end_idx - this->model->item_embedding->start_idx + 1;
 
                 // initialize nagative sampler
                 negative_samplers::NegativeSampler *negative_sampler = nullptr;
                 if (this->cf_config->neg_sampler == 1) {
                     negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
-                            new negative_samplers::RandomTileNegativeSampler(this->cf_config, seed));
+                            new negative_samplers::RandomTileNegativeSampler(this->cf_config, seed, tile_space));
                 } else {
                     negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
                             new negative_samplers::UniformRandomNegativeSampler(this->cf_config, seed));
@@ -176,10 +151,9 @@ namespace cf {
                 behavior_aggregators::BehaviorAggregator behavior_aggregator(train_data_ptr, aggregator_weights_ptr,
                                                                              cf_config);
 
-                // std::cout << "start training" << std::endl;
-                std::unordered_map<idx_t, std::vector<val_t> > emb_grads;
+                std::unordered_map<idx_t, std::vector<val_t> > item_emb_grads;
+                std::unordered_map<idx_t, std::vector<val_t> > user_emb_grads;
 
-                //printf("start training, total iterations: %lu\n", iterations);
 
                 end_time = MPI_Wtime();
                 time_map["init"] += end_time - start_time;
@@ -189,15 +163,16 @@ namespace cf {
                     MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
                     start_time = MPI_Wtime();
-                    Data_shuffle::shuffle_and_update_item_grads(emb_grads, model->item_embedding);
+                    Data_shuffle::shuffle_and_update_item_grads(item_emb_grads, model->item_embedding,
+                                                                this->cf_config->num_items);
+                    Data_shuffle::shuffle_and_update_item_grads(user_emb_grads, model->user_embedding,
+                                                                this->cf_config->num_users);
                     end_time = MPI_Wtime();
                     time_map["shuffle_and_update_item_grads"] += end_time - start_time;
-
-                    emb_grads.clear();
+                    item_emb_grads.clear();
+                    user_emb_grads.clear();
 
                     start_time = MPI_Wtime();
-                    std::set<idx_t> users;
-                    std::vector<idx_t> pos_ids(batch_size);
                     for (int j = 0; j < batch_size; j++) {
                         if (i + j >= iterations) {
                             break;
@@ -206,103 +181,34 @@ namespace cf {
                         idx_t uid, iid;
                         this->train_data->read_user_item(id, uid, iid);
                         t_buf->pos_item_ids[j] = iid;
-                        if (users.find(uid) == users.end()) {
-                            users.insert(uid);
+                        t_buf->user_ids[j] = uid;
+                        if (item_emb_grads.find(iid) == item_emb_grads.end()) {
+                            item_emb_grads[iid] = std::vector<val_t>(this->cf_config->emb_dim, 0.0);
                         }
-                        if (emb_grads.find(iid) == emb_grads.end()) {
-                            emb_grads[iid] = std::vector<val_t>(this->cf_config->emb_dim, 0.0);
+                        if (user_emb_grads.find(uid) == user_emb_grads.end()) {
+                            user_emb_grads[uid] = std::vector<val_t>(this->cf_config->emb_dim, 0.0);
                         }
                     }
+
+                    //
 
                     // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
                     //printf("start shuffling pos embeddings\n");
                     Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->pos_item_ids, t_buf->pos_item_ids +
                                                                                        batch_size),
                                                t_buf->pos_emb_buf,
-                                               this->model->item_embedding);
+                                               this->model->item_embedding, this->cf_config->num_items);
+
+                    Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->user_ids, t_buf->user_ids +
+                                                                                   batch_size),
+                                               t_buf->user_emb_buf,
+                                               this->model->user_embedding, this->cf_config->num_users);
 
                     end_time = MPI_Wtime();
                     time_map["shuffle_embs"] += end_time - start_time;
 
-
-                    // shuffle historical embeddings for next batch
                     start_time = MPI_Wtime();
-                    std::set<idx_t> his_items;
-                    memory::Array<idx_t> *historical_items = this->train_data->historical_items;
-                    auto his_id_buf = new idx_t[train_data_ptr->max_his];
-                    for (auto &user: users) {
-                        idx_t *his_ids = historical_items->read_row(user, his_id_buf);
-                        for (int j = 0; j < train_data_ptr->max_his; j++) {
-                            if (his_items.find(his_ids[j]) == his_items.end()) {
-                                his_items.insert(his_ids[j]);
-                            }
-                        }
-                    }
-
-                    behavior_aggregator.tiled_his_buf.resize(his_items.size() * this->cf_config->emb_dim);
-                    behavior_aggregator.his_ids.resize(his_items.size());
-                    std::copy(his_items.begin(), his_items.end(), behavior_aggregator.his_ids.data());
-                    //printf("start shuffling historical embeddings\n");
-                    Data_shuffle::shuffle_embs(behavior_aggregator.his_ids, behavior_aggregator.tiled_his_buf.data(),
-                                               this->model->item_embedding);
-                    behavior_aggregator.his_id_map.clear();
-                    for (int j = 0; j < behavior_aggregator.his_ids.size(); j++) {
-                        behavior_aggregator.his_id_map[behavior_aggregator.his_ids[j]] = j;
-                    }
-                    end_time = MPI_Wtime();
-                    time_map["shuffle_his_embs"] += end_time - start_time;
-
-                    // assume that the negative sampler is random tile negative sampler
-
-                    //  just a test for reading an embedding
-                    //printf("test for reading an embedding\n");
-                    // std::vector<val_t> emb(this->cf_config->emb_dim);
-                    /*this->model->item_embedding->read_weights(5+this->model->item_embedding->start_idx, emb.data());
-                    for (int j = 0; j < this->cf_config->emb_dim; j++) {
-                        printf("%f ", emb[j]);
-                    }
-                    printf("\n");*/
-
-                    if (dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler) !=
-                        nullptr) {
-                        start_time = MPI_Wtime();
-                        auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
-                        //printf("start shuffling and updating neg grads\n");
-                        // shuffle the negative embeddings to t_buf->tiled_neg_emb_buf
-                        Data_shuffle::shuffle_embs(neg_tile, t_buf->tiled_neg_emb_buf,
-                                                   this->model->item_embedding);
-                        end_time = MPI_Wtime();
-                        time_map["shuffle_negs"] += end_time - start_time;
-
-                        /*printf("start inspecting negative embeddings\n");
-
-                        for (auto j = 0; j < this->cf_config->tile_size; j++) {
-                            printf("%lu ", neg_tile[j]);
-                        }
-                        printf("\n");
-                        // inspect the negative embeddings
-                        for (auto j = 0; j < this->cf_config->tile_size; j++) {
-                            printf("negative embedding %d %d, %f %f %f %f\n", j, rank, t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim],
-                                   t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 1],
-                                   t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 2],
-                                   t_buf->tiled_neg_emb_buf[j * this->cf_config->emb_dim + 3]);
-                        }
-
-                        printf("finish inspecting negative embeddings\n");*/
-
-                    } else {
-                        throw std::runtime_error("Only support random tile negative sampler");
-                    }
-
-                    auto neg_tile = dynamic_cast<const negative_samplers::RandomTileNegativeSampler *>(negative_sampler)->neg_tile;
-                    for (auto neg_id: neg_tile) {
-                        if (emb_grads.find(neg_id) == emb_grads.end()) {
-                            emb_grads[neg_id] = std::vector<val_t>(this->cf_config->emb_dim, 0.0);
-                        }
-                    }
-
-                    start_time = MPI_Wtime();
-#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i,behavior_aggregator, t_buf, emb_grads, neg_tile)
+#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i, behavior_aggregator, t_buf, item_emb_grads)
 
                     for (idx_t j = 0; j < batch_size; j++) {
                         idx_t user_id = 0;
@@ -310,53 +216,22 @@ namespace cf {
                         if (i + j >= iterations) {
                             continue;
                         }
-                        // printf("start training iteration %lu\n", i+j);
-                        idx_t train_data_idx = this->positive_sampler->read(i+j);
+                        idx_t train_data_idx = this->positive_sampler->read(i + j);
                         this->train_data->read_user_item(train_data_idx, user_id, item_id);
-                        //printf("user_id: %lu item_id: %lu rank: %d\n", user_id, item_id, rank);
                         negative_sampler->sampling(neg_ids);
-                        auto tmp = this->model->forward_backward(user_id, (i+j) % batch_size,
+                        auto tmp = this->model->forward_backward(user_id, (i + j) % batch_size,
                                                                  neg_ids,
-                                                                 neg_tile,
+                                                                 std::vector<idx_t>(),
                                                                  this->cf_modules, t_buf, &behavior_aggregator,
-                                                                 emb_grads);
+                                                                 item_emb_grads, user_emb_grads);
 
-                        //printf("finish forward and backward\n")  ;
                         local_loss = local_loss + tmp;
                     }
                     end_time = MPI_Wtime();
                     time_map["forward_backward"] += end_time - start_time;
-
-                    /*printf("start examine aggregated weights\n");
-                    for (int j = 0; j < this->cf_config->emb_dim; j++) {
-                        printf("%f ", shared_aggregated_weights[j]);
-                    }
-                    printf("\n");
-                    printf("finish examine aggregated weights\n");*/
-
-                    /*printf("update the global aggregator weights from local gradients\n");
-                    if (i % this->cf_config->train_size == 0) {
-                        // update the global aggregator weights from local gradients
-                        val_t *data = behavior_aggregator.weights0_grad_accu.data();
-                        Eigen::Map<Eigen::Array<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> global_weight_mat(
-                                shared_aggregated_weights, this->cf_config->emb_dim, this->cf_config->emb_dim);
-                        global_weight_mat -= behavior_aggregator.l_r * behavior_aggregator.weights0_grad_accu;
-                        behavior_aggregator.weights0_grad_accu.setZero();   // reset the gradient accumulator
-                    }*/
-
-                    //("local_loss is %f\n", tmp);
-
-                    // free the memory of historical embeddings
-                    behavior_aggregator.tiled_his_buf.clear();
-                    behavior_aggregator.his_ids.clear();
-                    behavior_aggregator.his_id_map.clear();
                 }
                 process_status = 0;   // 0 means the process is finished
-                //local_loss = local_loss / iterations;
-                // keep sharing data until all the processes are finished
-                //printf("finish training epoch from rank %d\n", rank);
-                //printf("finish training epoch\n")   ;
-                emb_grads.clear();
+                item_emb_grads.clear();
                 while (true) {
                     MPI_Allreduce(&process_status, &system_status, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
                     //printf("system_status: %d\n", system_status) ;
@@ -364,18 +239,19 @@ namespace cf {
                         break;
                     } else {
                         // Keep sending and receiving data until all the processes are finished
-                        Data_shuffle::shuffle_and_update_item_grads(emb_grads,
-                                                                    this->model->item_embedding);
+                        Data_shuffle::shuffle_and_update_item_grads(item_emb_grads,
+                                                                    this->model->item_embedding,
+                                                                    this->cf_config->num_items);
+                        Data_shuffle::shuffle_and_update_item_grads(user_emb_grads,
+                                                                    this->model->user_embedding,
+                                                                    this->cf_config->num_users);
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(),
                                                    t_buf->pos_emb_buf,
-                                                   this->model->item_embedding);
+                                                   this->model->item_embedding, this->cf_config->num_items);
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(),
                                                    t_buf->tiled_neg_emb_buf,
-                                                   this->model->item_embedding);
-                        Data_shuffle::shuffle_embs(std::vector<idx_t>(),
-                                                   t_buf->tiled_neg_emb_buf,
-                                                   this->model->item_embedding);
-                        emb_grads.clear();
+                                                   this->model->item_embedding, this->cf_config->num_items);
+                        item_emb_grads.clear();
                     }
                 }
 

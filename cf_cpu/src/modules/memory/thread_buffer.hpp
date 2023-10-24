@@ -28,8 +28,10 @@ struct ThreadBuffer
         // neg_grad_buf = static_cast<val_t*>(splatt_malloc(num_negs * emb_dim * sizeof(val_t)));
         neg_grad_buf = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
         tiled_neg_emb_buf = static_cast<val_t*>(splatt_malloc(tile_size * emb_dim * sizeof(val_t)));
-        pos_item_ids = static_cast<idx_t*>(splatt_malloc(batch_size * sizeof(idx_t)));   // this should be the batch size, not tile size
+        pos_item_ids = static_cast<idx_t*>(splatt_malloc(batch_size * sizeof(idx_t)));
+        user_ids = static_cast<idx_t*>(splatt_malloc(batch_size * sizeof(idx_t)));
         pos_emb_buf = static_cast<val_t*>(splatt_malloc(batch_size * emb_dim * sizeof(val_t)));   // positive
+        user_emb_bufs = static_cast<val_t*>(splatt_malloc(batch_size * emb_dim * sizeof(val_t)));   // user
 
 
         time_map["data"] = 0.0;
@@ -61,6 +63,8 @@ struct ThreadBuffer
         splatt_free(neg_emb_buf1);
         splatt_free(tiled_neg_emb_buf);
         splatt_free(pos_item_ids);
+        splatt_free(user_ids);
+        splatt_free(user_emb_bufs);
         time_map.clear();
     }
 
@@ -75,6 +79,8 @@ struct ThreadBuffer
     val_t* neg_grad_buf;
     val_t* tiled_neg_emb_buf;   // tiled negative embeddings
     idx_t* pos_item_ids;
+    idx_t* user_ids;
+    val_t* user_emb_bufs;   // user embeddings
     val_t* his_emb_buf;
 
     std::map<std::string, double> time_map;

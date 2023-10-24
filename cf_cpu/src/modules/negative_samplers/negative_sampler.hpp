@@ -15,7 +15,7 @@ namespace negative_samplers
 class NegativeSampler
 {
   public:
-    NegativeSampler(const std::shared_ptr<CFConfig> config, idx_t seed);
+    NegativeSampler(const std::shared_ptr<CFConfig> config, idx_t seed, idx_t tile_space = 0);
     virtual ~NegativeSampler() = default;
     virtual void sampling(std::vector<idx_t>& neg_ids) = 0;
     virtual void ignore_pos_sampling(idx_t user_id, idx_t pos_id, std::vector<idx_t>& neg_ids) = 0;

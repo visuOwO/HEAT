@@ -7,7 +7,7 @@ namespace modules
 namespace negative_samplers
 {
 
-UniformRandomNegativeSampler::UniformRandomNegativeSampler(const std::shared_ptr<CFConfig> config, idx_t seed) 
+UniformRandomNegativeSampler::UniformRandomNegativeSampler(const std::shared_ptr<CFConfig> config, idx_t seed, idx_t tile_space)
     : NegativeSampler(config, seed)
 {
     this->num_negs = config->num_negs;

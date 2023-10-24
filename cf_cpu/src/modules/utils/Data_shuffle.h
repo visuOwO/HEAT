@@ -28,17 +28,17 @@ namespace cf {
 
 
             static void shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> >& grads,
-                                                      embeddings::Embedding *item_embeddings);
+                                                      embeddings::Embedding *item_embeddings, idx_t total_nums);
 
             static void shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,
-                                     embeddings::Embedding *item_embeddings);
+                                     embeddings::Embedding *item_embeddings, idx_t total_nums);
 
             template<class T>
                     static void request_data(T *& requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank, embeddings::Embedding * item_embeddings);
 
 
             static idx_t * process_status;
-            static idx_t total_cols;
+            static idx_t num_items;
             static idx_t emb_dim;
 
             static std::shared_ptr<CFModules> cf_modules;

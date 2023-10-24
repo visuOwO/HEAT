@@ -32,7 +32,7 @@ class Model
 
     virtual val_t forward_backward(idx_t user_id, idx_t pos_id, std::vector<idx_t>& neg_ids, std::vector<idx_t> neg_tile,
         const std::shared_ptr<CFModules> cf_modules, memory::ThreadBuffer* t_buf, behavior_aggregators::BehaviorAggregator* behavior_aggregator,
-        std::unordered_map<idx_t, std::vector<val_t> > & updated_emb_grads) = 0;
+        std::unordered_map<idx_t, std::vector<val_t> > & updated_emb_grads, std::unordered_map<idx_t, std::vector<val_t> > & updated_user_grads) = 0;
 
     embeddings::Embedding* user_embedding;
     embeddings::Embedding* item_embedding;

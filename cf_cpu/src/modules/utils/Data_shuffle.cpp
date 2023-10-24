@@ -13,12 +13,12 @@ namespace cf {
         // shuffle gradients from other ranks and update local embeddings
         void
         Data_shuffle::shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> > &grads,
-                                                    embeddings::Embedding *item_embeddings) {
+                                                    embeddings::Embedding *item_embeddings, idx_t total_nums) {
             std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
             //printf("update item grads, size is: %zu\n", grads.size());
             //std::vector<std::vector<idx_t>> grads_map(world_size, std::vector<idx_t>());
-            idx_t k = total_cols / world_size;
-            idx_t r = total_cols % world_size;
+            idx_t k = total_nums / world_size;
+            idx_t r = total_nums % world_size;
 
             //initialize the map
             for (auto i = 0; i < world_size; i++) {
@@ -89,11 +89,11 @@ namespace cf {
         // input: items, received_item_embeddings (pre-allocated buffer for positive embeddings)
         // output: received_item_embeddings (positive embeddings)
         void Data_shuffle::shuffle_embs(const std::vector<idx_t> &items, val_t *received_item_embeddings,
-                                        embeddings::Embedding *item_embeddings) {
+                                        embeddings::Embedding *item_embeddings, idx_t total_nums) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
-            idx_t k = total_cols / world_size;
-            idx_t r = total_cols % world_size;
+            idx_t k = total_nums / world_size;
+            idx_t r = total_nums % world_size;
 
             //printf("shuffle embs, size is: %zu\n", items.size());
             //initialize the map

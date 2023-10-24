@@ -11,8 +11,8 @@ namespace cf {
                                                                embeddings::Embedding *item_embeddings) {
             std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
 
-            idx_t k = total_cols / world_size;
-            idx_t r = total_cols % world_size;
+            idx_t k = num_items / world_size;
+            idx_t r = num_items % world_size;
 
             //printf("shuffle grads, size is: %zu\n", grads.size());
             //initialize the map
@@ -94,8 +94,8 @@ namespace cf {
                                               embeddings::Embedding *item_embeddings) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
-            idx_t k = total_cols / world_size;
-            idx_t r = total_cols % world_size;
+            idx_t k = num_items / world_size;
+            idx_t r = num_items % world_size;
 
             //printf("shuffle embs, size is: %zu\n", items.size());
             //initialize the map

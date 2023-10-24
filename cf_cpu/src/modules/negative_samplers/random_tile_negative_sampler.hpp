@@ -12,7 +12,7 @@ namespace negative_samplers
 class RandomTileNegativeSampler : public NegativeSampler
 {
   public:
-    RandomTileNegativeSampler(const std::shared_ptr<CFConfig> config, idx_t seed);
+    RandomTileNegativeSampler(const std::shared_ptr<CFConfig> config, idx_t seed, idx_t tile_space);
     ~RandomTileNegativeSampler() = default;
     void refresh_tile();
     void sampling(std::vector<idx_t>& neg_ids) override;

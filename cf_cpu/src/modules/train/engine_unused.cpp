@@ -40,7 +40,7 @@ namespace cf {
 #if __cplusplus >= 201103L
                 std::random_shuffle(shared_data, shared_data + total_cols);
 #else
-                std::random_shuffle(shared_data, shared_data + total_cols, std::rand);
+                std::random_shuffle(shared_data, shared_data + num_items, std::rand);
 #endif
                 MPI_Bcast(shared_data, total_cols, MPI_UINT64_T, 0, MPI_COMM_WORLD);
                 //std::cout << shared_data[0] << " " << shared_data[1] << " " << shared_data[2] << " "  << shared_data[3] << std::endl;
@@ -135,7 +135,7 @@ namespace cf {
                         negative_samplers::NegativeSampler *negative_sampler = nullptr;
                         if (this->cf_config->neg_sampler == 1) {
                             negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
-                                    new negative_samplers::RandomTileNegativeSampler(this->cf_config, seed));
+                                    new negative_samplers::RandomTileNegativeSampler(this->cf_config, seed, part_end - part_start));
                         } else {
                             negative_sampler = static_cast<negative_samplers::NegativeSampler *>(
                                     new negative_samplers::UniformRandomNegativeSampler(this->cf_config, seed));
@@ -159,7 +159,7 @@ namespace cf {
 #if __cplusplus >= 201103L
                             std::random_shuffle(negative_partition, negative_partition + total_cols);
 #else
-                            std::random_shuffle(negative_partition, negative_partition + total_cols, std::rand);
+                            std::random_shuffle(negative_partition, negative_partition + num_items, std::rand);
 #endif
                         }
                         MPI_Bcast(negative_partition, total_cols, MPI_UINT64_T, 0, MPI_COMM_WORLD);
@@ -199,7 +199,7 @@ namespace cf {
                         }
 
                         //std::cout << "start synchronize positive item embedding weights" << std::endl;
-                        /*for (int k = 0; k < total_cols; k++) {
+                        /*for (int k = 0; k < num_items; k++) {
                             printf("col_map[%lu]=%lu from process %d\n", shared_data[k], col_map[shared_data[k]], rank);
                         }*/
                         // synchronize item_embedding_weights for positive items
