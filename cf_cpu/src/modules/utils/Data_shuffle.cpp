@@ -4,6 +4,7 @@
 
 
 #include "Data_shuffle.h"
+#include "thread_buffer.hpp"
 #include <Eigen/Dense>
 
 namespace cf {
@@ -89,7 +90,7 @@ namespace cf {
         // input: items, received_item_embeddings (pre-allocated buffer for positive embeddings)
         // output: received_item_embeddings (positive embeddings)
         void Data_shuffle::shuffle_embs(const std::vector<idx_t> &items, val_t *received_item_embeddings,
-                                        embeddings::Embedding *item_embeddings, idx_t total_nums) {
+                                        embeddings::Embedding *item_embeddings, idx_t total_nums, memory::ThreadBuffer *t_buf) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
             idx_t k = total_nums / world_size;
@@ -116,6 +117,7 @@ namespace cf {
             std::vector<idx_t> cnts(world_size, 0);
             std::vector<val_t *> received_data(world_size, nullptr);
             for (auto i = 1; i < world_size; i++) {
+                printf("rank %d, send to %d\n", rank, i);
                 idx_t dst = rank ^ i;
                 auto *recv_data = new val_t[items_map[dst].size() * emb_dim];
                 std::vector<idx_t> recv_cols;
@@ -127,6 +129,11 @@ namespace cf {
              }
 
             // copy local embeddings
+            for (auto &ii: t_buf->time_map) {
+                printf("%s: %f\t", ii.first.c_str(), ii.second);
+            }
+            printf("\n");
+
             for (auto i = 0; i < items_map[rank].size(); i++) {
                 idx_t idx = items_map[rank][i];
                 //printf("%lu %lu\n", idx_map[rank][i], idx);
@@ -141,6 +148,10 @@ namespace cf {
                 printf("\n");*/
                 delete[] updated_item_embeddings;
             }
+            for (auto &ii: t_buf->time_map) {
+                printf("%s: %f\t", ii.first.c_str(), ii.second);
+            }
+            printf("\n");
 
             // free memory
             for (auto i = 0; i < world_size; i++) {

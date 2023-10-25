@@ -12,6 +12,7 @@
 #include "splatt/base.h"
 #include "embeddings/embedding.hpp"
 #include "cf_modules.hpp"
+#include "thread_buffer.hpp"
 
 namespace cf {
     namespace modules {
@@ -31,7 +32,7 @@ namespace cf {
                                                       embeddings::Embedding *embeddings, idx_t total_nums);
 
             static void shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,
-                                     embeddings::Embedding *item_embeddings, idx_t total_nums);
+                                     embeddings::Embedding *item_embeddings, idx_t total_nums, memory::ThreadBuffer *t_buf);
 
             template<class T>
                     static void request_data(T *& requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank, embeddings::Embedding * item_embeddings);

@@ -198,7 +198,6 @@ namespace cf {
                     }
 
 
-
                     // shuffle the positive embeddings to t_buf->tiled_pos_emb_buf
                     printf("start shuffling pos embeddings from rank %d\n", rank);
                     std::vector<idx_t> pos_ids(batch_size);
@@ -209,20 +208,29 @@ namespace cf {
                     for (idx_t j = 0; j < batch_size; j++) {
                         user_ids[j] = t_buf->user_ids[j];
                     }
+                    for (auto &ii: t_buf->time_map) {
+                        printf("%s: %f\t", ii.first.c_str(), ii.second);
+                    }
+                    printf("\n");
                     Data_shuffle::shuffle_embs(pos_ids,
                                                t_buf->pos_emb_buf,
-                                               this->model->item_embedding, this->cf_config->num_items);
+                                               this->model->item_embedding, this->cf_config->num_items, t_buf);
 
                     Data_shuffle::shuffle_embs(user_ids,
-                                               t_buf->user_emb_buf,
-                                               this->model->user_embedding, this->cf_config->num_users);
+                                               t_buf->user_emb_bufs,
+                                               this->model->user_embedding, this->cf_config->num_users, t_buf);
+
+                    for (auto &ii: t_buf->time_map) {
+                        printf("%s: %f\t", ii.first.c_str(), ii.second);
+                    }
+                    printf("\n");
 
                     // examine the shuffled embeddings
                     for (idx_t j = 0; j < batch_size; j++) {
                         idx_t user_id = t_buf->user_ids[j];
                         idx_t item_id = t_buf->pos_item_ids[j];
-                        val_t* user_emb_ptr = t_buf->user_emb_buf + j * this->cf_config->emb_dim;
-                        val_t* item_emb_ptr = t_buf->pos_emb_buf + j * this->cf_config->emb_dim;
+                        val_t *user_emb_ptr = t_buf->user_emb_bufs + j * this->cf_config->emb_dim;
+                        val_t *item_emb_ptr = t_buf->pos_emb_buf + j * this->cf_config->emb_dim;
                         printf("rank %d, user_id: %lu, item_id: %lu\n", rank, user_id, item_id);
                         printf("rank %d, user_emb: ", rank);
                         for (idx_t k = 0; k < this->cf_config->emb_dim; k++) {
@@ -266,7 +274,7 @@ namespace cf {
 
                     start_time = MPI_Wtime();
                     printf("finish preparing data from rank %d\n", rank);
-#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i, behavior_aggregator, t_buf, item_emb_grads, user_emb_grads)
+//#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i, t_buf, item_emb_grads, user_emb_grads)
 
                     for (idx_t j = 0; j < batch_size; j++) {
                         idx_t user_id = 0;
@@ -307,7 +315,10 @@ namespace cf {
                                                                     this->cf_config->num_users);
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(),
                                                    t_buf->pos_emb_buf,
-                                                   this->model->item_embedding, this->cf_config->num_items);
+                                                   this->model->item_embedding, this->cf_config->num_items, t_buf);
+                        Data_shuffle::shuffle_embs(std::vector<idx_t>(),
+                                                   t_buf->user_emb_bufs,
+                                                   this->model->user_embedding, this->cf_config->num_users, t_buf);
                         item_emb_grads.clear();
                     }
                 }

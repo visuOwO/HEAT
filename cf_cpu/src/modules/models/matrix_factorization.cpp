@@ -47,7 +47,7 @@ namespace cf {
                 printf("test 0.1 at rank %d\n", rank);
 
                 val_t *user_emb_ptr =
-                        t_buf->user_emb_buf + idx * emb_dim;
+                        t_buf->user_emb_bufs + idx * emb_dim;
                 val_t *user_grad_ptr =
                         remote_user_embeddings_grads[t_buf->user_ids[idx]].data();
 
