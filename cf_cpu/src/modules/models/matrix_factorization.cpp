@@ -37,7 +37,7 @@ namespace cf {
                 val_t *user_emb_ptr = user_embedding_weights->read_row(user_id-this->user_embedding->start_idx, user_emb_buf);*/
                 // val_t *user_grad_ptr = user_embedding_grads->read_row(user_id, t_buf->user_grad_buf);
 
-                val_t *user_emb_ptr = t_buf->user_emb_buf + idx * emb_dim;
+                val_t *user_emb_ptr = t_buf->user_emb_bufs + idx * emb_dim;
                 val_t *user_grad_ptr = remote_user_embeddings_grads[t_buf->user_ids[idx]].data();;
 
                 val_t *pos_emb_ptr = t_buf->pos_emb_buf + idx * emb_dim;

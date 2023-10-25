@@ -201,7 +201,7 @@ namespace cf {
 
                     Data_shuffle::shuffle_embs(std::vector<idx_t>(t_buf->user_ids, t_buf->user_ids +
                                                                                    batch_size),
-                                               t_buf->user_emb_buf,
+                                               t_buf->user_emb_bufs,
                                                this->model->user_embedding, this->cf_config->num_users);
 
                     end_time = MPI_Wtime();
@@ -249,7 +249,7 @@ namespace cf {
                                                    t_buf->pos_emb_buf,
                                                    this->model->item_embedding, this->cf_config->num_items);
                         Data_shuffle::shuffle_embs(std::vector<idx_t>(),
-                                                   t_buf->tiled_neg_emb_buf,
+                                                   t_buf->user_emb_bufs,
                                                    this->model->item_embedding, this->cf_config->num_items);
                         item_emb_grads.clear();
                     }
