@@ -65,6 +65,7 @@ struct ThreadBuffer
         splatt_free(pos_item_ids);
         splatt_free(user_ids);
         splatt_free(user_emb_bufs);
+        splatt_free(his_emb_buf);
         time_map.clear();
     }
 

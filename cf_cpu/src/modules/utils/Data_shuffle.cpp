@@ -95,7 +95,8 @@ namespace cf {
             idx_t k = total_nums / world_size;
             idx_t r = total_nums % world_size;
 
-            //printf("shuffle embs, size is: %zu\n", items.size());
+            //
+            printf("shuffle embs, size is: %zu\n", items.size());
             //initialize the map
             for (auto i = 0; i < world_size; i++) {
                 items_map[i] = std::vector<idx_t>();
@@ -131,6 +132,7 @@ namespace cf {
                 //printf("%lu %lu\n", idx_map[rank][i], idx);
                 auto *updated_item_embeddings = new val_t[emb_dim];
                 item_embeddings->weights->read_row(idx - item_embeddings->start_idx, updated_item_embeddings);
+                printf("idx is %lu, id is %lu, rank is %d\n", idx, idx_map[rank][i], rank);
                 memcpy(received_item_embeddings + idx_map[rank][i] * emb_dim, updated_item_embeddings,
                        emb_dim * sizeof(val_t));
                 /*for (idx_t j = 0; j < emb_dim; j++) {
