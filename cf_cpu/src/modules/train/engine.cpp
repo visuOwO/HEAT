@@ -208,7 +208,7 @@ namespace cf {
                     time_map["shuffle_embs"] += end_time - start_time;
 
                     start_time = MPI_Wtime();
-#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i, behavior_aggregator, t_buf, item_emb_grads)
+#pragma omp parallel for schedule(static, mini_batch_size) num_threads(num_thread) reduction(+:local_loss) shared(i, behavior_aggregator, t_buf, item_emb_grads, user_emb_grads)
 
                     for (idx_t j = 0; j < batch_size; j++) {
                         idx_t user_id = 0;
