@@ -222,6 +222,8 @@ namespace cf {
                     Data_shuffle::update_grad(t_buf->pos_item_ids, this->model->item_embedding, pos_grad_buf);
                     Data_shuffle::update_grad(t_buf->user_ids, this->model->user_embedding, user_grad_buf);
 
+                    this->model->item_embedding->zero_grad();
+
                     end_time = MPI_Wtime();
                     time_map["forward_backward"] += end_time - start_time;
                 }

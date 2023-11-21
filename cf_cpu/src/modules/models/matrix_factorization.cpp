@@ -96,6 +96,12 @@ namespace cf {
                     idx_t neg_id = neg_ids[neg_idx];
                     val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id-item_embedding->start_idx, t_buf->neg_emb_buf0);
                     memcpy(t_buf->neg_emb_buf1 + neg_idx * emb_dim, neg_emb_ptr, emb_dim * sizeof(val_t));
+
+                    printf("%lu %lu neg_emb_ptr: ", neg_id, neg_id-item_embedding->start_idx);
+                    for (idx_t i = 0; i < emb_dim; ++i) {
+                        printf("%f ", neg_emb_ptr[i]);
+                    }
+                    printf("\n");
                 }
 
                 end_time = omp_get_wtime();
@@ -169,6 +175,12 @@ namespace cf {
                     user_emb_grad += loss_grad(0, neg_idx) * (u_n_cos_u_grad - u_p_cos_u_grad);
                     pos_emb_grad += loss_grad(0, neg_idx) * u_p_cos_p_grad;
                     neg_emb_grad += loss_grad(0, neg_idx) * u_n_cos_n_grad;
+
+                    printf("neg_grad_ptr: ");
+                    for (idx_t i = 0; i < emb_dim; ++i) {
+                        printf("%f ", neg_grad_ptr[i]);
+                    }
+                    printf("\n");
 
                     cf_modules->optimizer->sparse_step(neg_embs.row(neg_idx).data(), neg_grad_ptr);
                     item_embedding_weights->write_row(neg_id-item_embedding->start_idx, neg_embs.row(neg_idx).data());
