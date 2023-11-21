@@ -28,15 +28,18 @@ namespace cf {
                                      std::vector<idx_t> &recv_cols);
 
 
-            static void shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> >& grads,
+            __attribute__((unused)) static void shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> >& grads,
                                                       embeddings::Embedding *embeddings, idx_t total_nums);
 
-            static void shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,
+            __attribute__((unused)) static void shuffle_embs(const std::vector<idx_t>& items, val_t *received_item_embeddings,
                                      embeddings::Embedding *item_embeddings, idx_t total_nums, memory::ThreadBuffer *t_buf);
 
             template<class T>
                     static void request_data(T *& requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank, embeddings::Embedding * item_embeddings);
 
+            static void update_grad(idx_t * idx_arr, embeddings::Embedding * embeddings, val_t * data);
+
+            static void request_emb(idx_t * idx_arr, embeddings::Embedding * embeddings, val_t* data);
 
             static idx_t * process_status;
             static idx_t num_items;
@@ -47,8 +50,7 @@ namespace cf {
             static MPI_Comm comm;
             static int rank;
             static int world_size;
-        private:
-
+            static int batch_size;
         };
 
     } // cf

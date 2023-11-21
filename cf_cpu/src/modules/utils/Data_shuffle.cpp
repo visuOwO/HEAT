@@ -12,7 +12,7 @@ namespace cf {
 
 
         // shuffle gradients from other ranks and update local embeddings
-        void
+        __attribute__((unused)) void
         Data_shuffle::shuffle_and_update_item_grads(std::unordered_map<idx_t, std::vector<val_t> > &grads,
                                                     embeddings::Embedding *embeddings, idx_t total_nums) {
             std::unordered_map<idx_t, std::vector<idx_t>> grads_map;
@@ -89,15 +89,14 @@ namespace cf {
         // get embeddings from other ranks before computing
         // input: items, received_item_embeddings (pre-allocated buffer for positive embeddings)
         // output: received_item_embeddings (positive embeddings)
-        void Data_shuffle::shuffle_embs(const std::vector<idx_t> &items, val_t *received_item_embeddings,
-                                        embeddings::Embedding *item_embeddings, idx_t total_nums, memory::ThreadBuffer *t_buf) {
+        __attribute__((unused)) void Data_shuffle::shuffle_embs(const std::vector<idx_t> &items, val_t *received_item_embeddings,
+                                        embeddings::Embedding *item_embeddings, idx_t total_nums,
+                                        memory::ThreadBuffer *t_buf) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
             idx_t k = total_nums / world_size;
             idx_t r = total_nums % world_size;
 
-            //
-            printf("shuffle embs, size is: %zu\n", items.size());
             //initialize the map
             for (auto i = 0; i < world_size; i++) {
                 items_map[i] = std::vector<idx_t>();
@@ -117,7 +116,6 @@ namespace cf {
             std::vector<idx_t> cnts(world_size, 0);
             std::vector<val_t *> received_data(world_size, nullptr);
             for (auto i = 1; i < world_size; i++) {
-                printf("rank %d, send to %d\n", rank, i);
                 idx_t dst = rank ^ i;
                 auto *recv_data = new val_t[items_map[dst].size() * emb_dim];
                 std::vector<idx_t> recv_cols;
@@ -126,7 +124,7 @@ namespace cf {
                     memcpy(received_item_embeddings + idx_map[dst][j] * emb_dim, recv_data + j * emb_dim,
                            emb_dim * sizeof(val_t));
                 }
-             }
+            }
 
             // copy local embeddings
             for (auto &ii: t_buf->time_map) {
@@ -139,7 +137,6 @@ namespace cf {
                 //printf("%lu %lu\n", idx_map[rank][i], idx);
                 auto *updated_item_embeddings = new val_t[emb_dim];
                 item_embeddings->weights->read_row(idx - item_embeddings->start_idx, updated_item_embeddings);
-                printf("idx is %lu, id is %lu, rank is %d\n", idx, idx_map[rank][i], rank);
                 memcpy(received_item_embeddings + idx_map[rank][i] * emb_dim, updated_item_embeddings,
                        emb_dim * sizeof(val_t));
                 /*for (idx_t j = 0; j < emb_dim; j++) {
@@ -156,6 +153,139 @@ namespace cf {
             // free memory
             for (auto i = 0; i < world_size; i++) {
                 delete[] received_data[i];
+            }
+        }
+
+        void Data_shuffle::update_grad(idx_t * idx_arr, embeddings::Embedding *embeddings, val_t *data) {
+            std::unordered_map<idx_t, std::vector<idx_t>> items_map;
+            std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
+            idx_t k = batch_size / world_size;
+            idx_t r = batch_size % world_size;
+
+            //initialize the map
+            for (auto i = 0; i < world_size; i++) {
+                items_map[i] = std::vector<idx_t>();
+                idx_map[i] = std::vector<idx_t>();
+            }
+
+            for (auto i = 0; i < batch_size; i++) {
+                idx_t idx = idx_arr[i];
+                idx_t part = idx / k;
+                if (idx - part * k < r) {
+                    part++;
+                }
+                //printf("idx is %lu, part is %lu, rank is %d\n", idx, part, rank);
+                items_map[part].push_back(idx);
+                idx_map[part].push_back(i);
+            }
+
+            std::vector<idx_t> cnts(world_size, 0);
+            std::vector<val_t *> received_data(world_size, nullptr);
+
+            //send grads to other ranks
+            for (auto i = 1; i < world_size; i++) {
+                idx_t dst = rank ^ i;
+                std::vector<idx_t> recv_cols;
+                if (rank == 0) {
+                    int data_size = items_map[dst].size();
+                    MPI_Send((void *) &data_size, 1, MPI_UINT64_T, dst, 0, comm);
+                    MPI_Send((void *) items_map[dst].data(), data_size, MPI_UINT64_T, dst, 0, comm);
+                    auto *send_data = new val_t[data_size * emb_dim];
+                    for (idx_t j = 0; j < data_size; j++) {
+                        memcpy(send_data + j * emb_dim, data + idx_map[dst][j] * emb_dim, emb_dim * sizeof(val_t));
+                    }
+                    MPI_Send((void *) send_data, data_size * emb_dim, MPI_FLOAT, dst, 0, comm);
+                } else {
+                    int data_size;
+                    MPI_Recv((void *) &data_size, 1, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                    recv_cols.resize(data_size);
+                    MPI_Recv((void *) recv_cols.data(), data_size, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                    auto grads = new val_t[data_size * emb_dim];
+                    MPI_Recv((void *) grads, data_size * emb_dim, MPI_FLOAT, 0, 0, comm, MPI_STATUS_IGNORE);
+                    for (idx_t j = 0; j < data_size; j++) {
+                        auto *updated_item_embeddings = new val_t[emb_dim];
+                        embeddings->weights->read_row(recv_cols[j] - embeddings->start_idx, updated_item_embeddings);
+                        cf_modules->optimizer->sparse_step(updated_item_embeddings, grads + j * emb_dim);
+                        embeddings->weights->write_row(recv_cols[j] - embeddings->start_idx, updated_item_embeddings);
+                    }
+                }
+            }
+
+            // update local embeddings
+            if (rank == 0) {
+                for (auto i = 0; i < items_map[0].size(); i++) {
+                    idx_t idx = items_map[0][i];
+                    auto *updated_item_embeddings = new val_t[emb_dim];
+                    embeddings->weights->read_row(idx - embeddings->start_idx, updated_item_embeddings);
+                    cf_modules->optimizer->sparse_step(updated_item_embeddings, data + idx_map[0][i] * emb_dim);
+                    embeddings->weights->write_row(idx - embeddings->start_idx, updated_item_embeddings);
+                }
+            }
+        }
+
+        void Data_shuffle::request_emb(idx_t * idx_arr, embeddings::Embedding *embeddings, val_t* data) {
+            std::unordered_map<idx_t, std::vector<idx_t>> items_map;
+            std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
+            idx_t k = batch_size / world_size;
+            idx_t r = batch_size % world_size;
+
+            //initialize the map
+            for (auto i = 0; i < world_size; i++) {
+                items_map[i] = std::vector<idx_t>();
+                idx_map[i] = std::vector<idx_t>();
+            }
+
+            for (auto i = 0; i < batch_size; i++) {
+                idx_t idx = idx_arr[i];
+                idx_t part = idx / k;
+                if (idx - part * k < r) {
+                    part++;
+                }
+                //printf("idx is %lu, part is %lu, rank is %d\n", idx, part, rank);
+                items_map[part].push_back(idx);
+                idx_map[part].push_back(i);
+            }
+
+            std::vector<idx_t> cnts(world_size, 0);
+            std::vector<val_t *> received_data(world_size, nullptr);
+
+            //request data from other ranks
+            for (auto i = 1; i < world_size; i++) {
+                idx_t dst = rank ^ i;
+                std::vector<idx_t> recv_cols;
+                if (rank == 0) {
+                    int request_size = items_map[dst].size();
+                    auto * recv_data = new val_t[request_size * emb_dim];
+                    MPI_Send((void *) &request_size, 1, MPI_UINT64_T, dst, 0, comm);
+                    MPI_Send((void *) items_map[dst].data(), request_size, MPI_UINT64_T, dst, 0, comm);
+                    MPI_Recv((void *) recv_data, request_size * emb_dim, MPI_FLOAT, dst, 0, comm, MPI_STATUS_IGNORE);
+                    for (auto j = 0; j < request_size; j++) {
+                        memcpy(data + idx_map[dst][j] * emb_dim, recv_data + j * emb_dim, emb_dim * sizeof(val_t));
+                    }
+                    delete[] recv_data;
+                } else {
+                    int request_size;
+                    MPI_Recv((void *) &request_size, 1, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                    recv_cols.resize(request_size);
+                    MPI_Recv((void *) recv_cols.data(), request_size, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                    auto send_data = new val_t[request_size * emb_dim];
+                    for (idx_t j = 0; j < request_size; j++) {
+                        embeddings->weights->read_row(recv_cols[j] - embeddings->start_idx, send_data + j * emb_dim);
+                    }
+                    MPI_Send((void *) send_data, request_size * emb_dim, MPI_FLOAT, 0, 0, comm);
+                    delete[] send_data;
+                }
+            }
+
+            //copy local embeddings
+            if (rank == 0) {
+                for (auto i = 0; i < items_map[0].size(); i++) {
+                    idx_t idx = items_map[0][i];
+                    auto *tmp = new val_t[emb_dim];
+                    embeddings->weights->read_row(idx - embeddings->start_idx, tmp);
+                    memcpy(data + idx_map[0][i] * emb_dim, tmp, emb_dim * sizeof(val_t));
+                    delete[] tmp;
+                }
             }
         }
 
@@ -211,11 +341,7 @@ namespace cf {
         }
 
 
-
         // request data from other ranks
-
-
-
         template<class T>
         void Data_shuffle::shuffle_grad(T *send_data, std::vector<idx_t> &cols, idx_t dst_rank, T *&recv_data,
                                         std::vector<idx_t> &recv_cols) {

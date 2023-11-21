@@ -117,9 +117,12 @@ class SubClickDataset(Dataset):
 
         self.file_path = parent_dataset.file_path
         self.user_items_dic = {}
-        for user_id in parent_dataset.get_user_items():
+
+        '''for user_id in parent_dataset.get_user_items():
             if start <= user_id < end:
-                self.user_items_dic[user_id - start] = parent_dataset.get_user_items()[user_id]
+                self.user_items_dic[user_id - start] = parent_dataset.get_user_items()[user_id]'''
+
+        self.user_items_dic = parent_dataset.user_items_dic
 
         self.user_item_ids = []
         self.user_ids_dic = {}

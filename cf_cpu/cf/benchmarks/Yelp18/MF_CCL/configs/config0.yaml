@@ -6,7 +6,7 @@ dataset_config:
     test_data: test.txt
 
 model_config:
-    num_negs: 4
+    num_negs: 8
     max_his: 100
     embedding_dim: 4
     neg_sampler: 1

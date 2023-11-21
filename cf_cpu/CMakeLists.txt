@@ -32,7 +32,15 @@ include_directories(${CMAKE_SOURCE_DIR}/src
                     ${CMAKE_SOURCE_DIR}/src/splatt 
                     ${CMAKE_SOURCE_DIR}/src/modules 
                     ${CMAKE_SOURCE_DIR}/src/modules/memory 
-                    ${CMAKE_SOURCE_DIR}/src/modules/random 
+                    ${CMAKE_SOURCE_DIR}/src/modules/random
+                    ${CMAKE_SOURCE_DIR}/src/modules/behavior_aggregators
+                    ${CMAKE_SOURCE_DIR}/src/modules/datasets
+                    ${CMAKE_SOURCE_DIR}/src/modules/embeddings
+                    ${CMAKE_SOURCE_DIR}/src/modules/models
+                    ${CMAKE_SOURCE_DIR}/src/modules/negative_samplers
+                    ${CMAKE_SOURCE_DIR}/src/modules/optimizers
+                    ${CMAKE_SOURCE_DIR}/src/modules/train
+                    ${CMAKE_SOURCE_DIR}/src/modules/test
                     ) 
 
 file(GLOB CF_SOURCES 
@@ -46,15 +54,14 @@ file(GLOB CF_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/optimizers/*.cpp 
     ${CMAKE_SOURCE_DIR}/src/modules/train/*.cpp
         ${CMAKE_SOURCE_DIR}/src/modules/test/*.cpp
-        ${CMAKE_SOURCE_DIR}/src/modules/utils/Data_shuffle.cpp
+        ${CMAKE_SOURCE_DIR}/src/modules/utils/*.cpp
     )
 
 find_package(Eigen3 REQUIRED)
 set(EIGEN3_INCLUDE_DIR extern/eigen)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-add_library(cf ${CF_SOURCES}
-        src/modules/utils/Async_Data_shuffle.cpp)
+add_library(cf ${CF_SOURCES})
 
 add_subdirectory(extern/pybind11)
 file(GLOB PYBIND_SOURCES src/pybind/*.cpp)

@@ -21,12 +21,6 @@ namespace cf {
                                                         std::unordered_map<idx_t, std::vector<val_t> > &remote_user_embeddings_grads
             ) {
                 printf("MatrixFactorization::forward_backward\n");
-                for (auto &i: t_buf->time_map) {
-                    printf("%s: %f\n", i.first.c_str(), i.second);
-                }
-                printf("\n");
-                int rank;
-                MPI_Comm_rank(MPI_COMM_WORLD, &rank);
                 double start_time = omp_get_wtime();
                 double forward_time = start_time;
                 double f_b_time = start_time;
@@ -43,73 +37,40 @@ namespace cf {
                 /*auto * user_emb_buf = new val_t[emb_dim];
                 val_t *user_emb_ptr = user_embedding_weights->read_row(user_id-this->user_embedding->start_idx, user_emb_buf);*/
                 // val_t *user_grad_ptr = user_embedding_grads->read_row(user_id, t_buf->user_grad_buf);
-
-                printf("test 0.1 at rank %d\n", rank);
-
                 val_t *user_emb_ptr =
                         t_buf->user_emb_bufs + idx * emb_dim;
                 val_t *user_grad_ptr =
-                        remote_user_embeddings_grads[t_buf->user_ids[idx]].data();
-
-                printf("test 0.2 at rank %d\n", rank);
+                        t_buf->user_grad_buf + idx * emb_dim;
 
                 val_t *pos_emb_ptr =
                         t_buf->pos_emb_buf + idx * emb_dim;
-
-                printf("test 0.25 at rank %d\n", rank);
-
                 //print all key in remote_item_embeddings_grads
 
-                for (auto & remote_item_embeddings_grad : remote_item_embeddings_grads) {
-                    printf("remote_item_embeddings_grads key: %lu\n", remote_item_embeddings_grad.first);
-                    std::cout << remote_item_embeddings_grad.second.data() << std::endl;
-                    std::cout << remote_item_embeddings_grads[remote_item_embeddings_grad.first].data() << std::endl;
-                }
-                std::cout << std::endl;
-                std::cout << t_buf->pos_item_ids[idx] << std::endl;
-                std::cout << remote_item_embeddings_grads[t_buf->pos_item_ids[idx]].data() << std::endl;
-                std::cout << std::endl;
-
                 val_t *pos_grad_ptr =
-                        remote_item_embeddings_grads[t_buf->pos_item_ids[idx]].data();
-
-                printf("test 0.3 at rank %d\n", rank);
-
+                        t_buf->pos_grad_buf + idx * emb_dim;
                 Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> user_emb_grad(user_grad_ptr, 1,
                                                                                                    emb_dim);
                 Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> pos_emb_grad(pos_grad_ptr, 1,
                                                                                                   emb_dim);
 
-
-                printf("finish preparing emb and grad at rank %d\n", rank);
-
                 double end_time = omp_get_wtime();
                 t_buf->time_map["read_emb"] = t_buf->time_map["read_emb"] + (end_time - start_time);
                 start_time = end_time;
 
-                printf("test 0.305 at rank %d\n", rank);
                 //behavior_aggregator->forward(user_id, user_emb_ptr, this->item_embedding, t_buf);
                 end_time = omp_get_wtime();
                 t_buf->time_map["aggr_f"] = t_buf->time_map["aggr_f"] + (end_time - start_time);
                 start_time = end_time;
 
-                printf("BehaviorAggregator finish forward\n");
-
                 Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> user_emb(user_emb_ptr, 1, emb_dim);
                 Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> pos_emb(pos_emb_ptr, 1, emb_dim);
 
-
                 val_t user_user_dot = user_emb.dot(user_emb);
-                printf("test 0.31 at rank %d\n", rank);
                 val_t pos_pos_dot = pos_emb.dot(pos_emb);
-                printf("test 0.32 at rank %d\n", rank);
                 val_t user_pos_dot = user_emb.dot(pos_emb);
-                printf("test 0.33 at rank %d\n", rank);
                 end_time = omp_get_wtime();
                 t_buf->time_map["dot"] = t_buf->time_map["dot"] + (end_time - start_time);
                 start_time = end_time;
-
-                printf("test 0.4 at rank %d\n", rank);
 
                 // compute user positive cosine similarity, partial gradient
                 // machine epsilon
@@ -130,9 +91,6 @@ namespace cf {
 
                 start_time = end_time;
 
-                printf("test 0.5 at rank %d\n", rank);
-
-
                 // compute user negative dot products
                 for (idx_t neg_idx = 0; neg_idx < num_negs; ++neg_idx) {
                     idx_t neg_id = neg_ids[neg_idx];
@@ -144,8 +102,6 @@ namespace cf {
                 t_buf->time_map["read_emb"] = t_buf->time_map["read_emb"] + (end_time - start_time);
                 start_time = end_time;
 
-                printf("test 0.6 at rank %d\n", rank);
-
                 Eigen::Map<Eigen::Matrix<val_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> neg_embs(
                         t_buf->neg_emb_buf1, num_negs, emb_dim);
                 Eigen::Matrix<val_t, 1, Eigen::Dynamic> user_neg_dots = user_emb * neg_embs.transpose();
@@ -155,8 +111,6 @@ namespace cf {
                 end_time = omp_get_wtime();
                 t_buf->time_map["dot"] = t_buf->time_map["dot"] + (end_time - start_time);
                 start_time = end_time;
-
-                printf("test 1 at rank %d\n", rank);
 
                 // compute user negative cosine similarity, score
 
@@ -195,14 +149,8 @@ namespace cf {
                 // Eigen::Matrix<val_t, 1, Eigen::Dynamic> user_emb_grad = Eigen::Matrix<val_t, 1, Eigen::Dynamic>::Zero(1, emb_dim);
                 // Eigen::Matrix<val_t, 1, Eigen::Dynamic> pos_emb_grad = Eigen::Matrix<val_t, 1, Eigen::Dynamic>::Zero(1, emb_dim);
                 // Eigen::Matrix<val_t, 1, Eigen::Dynamic> neg_emb_grad = Eigen::Matrix<val_t, 1, Eigen::Dynamic>::Zero(1, emb_dim);
-                const val_t l2 = cf_modules->cf_config->l2;
-
-                printf("test2\n");
                 for (idx_t neg_idx = 0; neg_idx < neg_ids.size(); ++neg_idx) {
                     idx_t neg_id = neg_ids[neg_idx];
-                    //val_t* neg_emb_ptr = item_embedding_weights->read_row(neg_id, t_buf->neg_emb_buf0);
-                    // Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb(neg_emb_ptr, 1, emb_dim);
-
 
                     val_t * neg_grad_ptr = item_embedding_grads->read_row(neg_id-item_embedding->start_idx, t_buf->neg_grad_buf);
                     Eigen::Map<Eigen::Matrix<val_t, 1, Eigen::Dynamic, Eigen::RowMajor>> neg_emb_grad(neg_grad_ptr, 1,
@@ -249,9 +197,6 @@ namespace cf {
                 t_buf->time_map["backward"] = t_buf->time_map["backward"] + (end_time - backward_time);
                 t_buf->time_map["f_b"] = t_buf->time_map["f_b"] + (end_time - f_b_time);
 
-
-                // free memory
-                //delete[] user_emb_buf;
 
                 return loss;
             }
