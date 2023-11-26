@@ -36,7 +36,7 @@ void init_datasets(py::module_ &modules_module) {
     py::module_ datasets_module = modules_module.def_submodule("datasets", "datasets");
 
     py::class_<cf::modules::datasets::Dataset,
-            std::shared_ptr<cf::modules::datasets::Dataset>>(datasets_module, "Dataset");
+            std::shared_ptr<cf::modules::datasets::Dataset>> give_me_a_name(datasets_module, "Dataset");
 
     py::class_<cf::modules::datasets::ClickDataset,
             cf::modules::datasets::Dataset,
@@ -76,20 +76,25 @@ void init_models(py::module_ &modules_module) {
             .def(py::init<>([](const std::shared_ptr<cf::modules::CFConfig> cf_config,
                                py::array_t<val_t, py::array::c_style> &user_weights,
                                py::array_t<val_t, py::array::c_style> &item_weights,
-                               idx_t start_item_id,
-                               idx_t end_item_id
+                               idx_t start_item_id, idx_t end_item_id,
+                                 idx_t start_user_id, idx_t end_user_id
                                ) {
                      //  idx_t user_weights_rows = click_dataset.shape()[0];
                      //  idx_t user_weights_cols = click_dataset.shape()[1];
                      auto user_weights_ptr = static_cast<val_t *>(user_weights.request().ptr);
                      auto item_weights_ptr = static_cast<val_t *>(item_weights.request().ptr);
-                     return cf::modules::models::MatrixFactorization(cf_config, user_weights_ptr, item_weights_ptr, start_item_id, end_item_id);
+                     return cf::modules::models::MatrixFactorization(cf_config, user_weights_ptr,
+                                                                     item_weights_ptr, start_item_id, end_item_id,
+                                                                     start_user_id, end_user_id);
                  }),
                  py::arg("cf_config"),
                  py::arg("user_weights"),
                  py::arg("item_weights"),
                  py::arg("start_item_id"),
-                 py::arg("end_item_id"));
+                 py::arg("end_item_id"),
+                 py::arg("start_user_id"),
+                 py::arg("end_user_id"));
+
 
     // .def_readwrite("var", &cf::modules::models::MatrixFactorization::var);
 }

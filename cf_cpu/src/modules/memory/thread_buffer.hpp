@@ -20,7 +20,6 @@ struct ThreadBuffer
         this->emb_dim = emb_dim;
         this->num_negs = num_negs;
 
-        user_emb_buf = static_cast<val_t*>(splatt_malloc(emb_dim * batch_size * sizeof(val_t)));
         user_grad_buf = static_cast<val_t*>(splatt_malloc(emb_dim * batch_size * sizeof(val_t)));
         pos_grad_buf = static_cast<val_t*>(splatt_malloc(emb_dim * batch_size * sizeof(val_t)));
         neg_emb_buf0 = static_cast<val_t*>(splatt_malloc(emb_dim * sizeof(val_t)));
@@ -57,7 +56,6 @@ struct ThreadBuffer
         splatt_free(user_grad_buf);
         splatt_free(pos_grad_buf);
         splatt_free(neg_grad_buf);
-        splatt_free(user_emb_buf);
         splatt_free(pos_emb_buf);
         splatt_free(neg_emb_buf0);
         splatt_free(neg_emb_buf1);
@@ -71,7 +69,6 @@ struct ThreadBuffer
 
     idx_t emb_dim;
     idx_t num_negs;
-    val_t* user_emb_buf;
     val_t* user_grad_buf;
     val_t* pos_emb_buf;
     val_t* pos_grad_buf;

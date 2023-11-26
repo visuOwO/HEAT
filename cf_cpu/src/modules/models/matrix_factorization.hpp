@@ -13,7 +13,9 @@ namespace models
 class MatrixFactorization : public Model
 {
   public:
-    MatrixFactorization(const std::shared_ptr<CFConfig> config, val_t* user_weights, val_t* item_weights, idx_t start_item_id, idx_t end_item_id);
+    MatrixFactorization(const std::shared_ptr<CFConfig> config, val_t* user_weights, val_t* item_weights,
+                        idx_t start_item_id, idx_t end_item_id,
+                        idx_t start_user_id, idx_t end_user_id);
     ~MatrixFactorization() = default;
 
     val_t forward_backward(idx_t user_id, idx_t idx, std::vector<idx_t>& neg_ids, std::vector<idx_t> neg_tile,

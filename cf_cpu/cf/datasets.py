@@ -63,7 +63,6 @@ class ClickDataset(Dataset):
                 for item in items:
                     if item not in self.item_ids_dic:
                         self.item_ids_dic[item] = item
-
                     self.user_item_ids.append([user_id, item])
 
         self.gen_dataset_info()
@@ -108,7 +107,7 @@ class ClickDataset(Dataset):
 
 
 class SubClickDataset(Dataset):
-    def __init__(self, parent_dataset, start, end, col_start, col_end, rank=None):
+    def __init__(self, parent_dataset, user_start, user_end, item_start, item_end, rank=None):
         super().__init__()
         self.click_dataset = None
 
@@ -122,7 +121,7 @@ class SubClickDataset(Dataset):
             if start <= user_id < end:
                 self.user_items_dic[user_id - start] = parent_dataset.get_user_items()[user_id]'''
 
-        self.user_items_dic = parent_dataset.user_items_dic
+        self.user_items_dic = parent_dataset.user_items_dic.copy()
 
         self.user_item_ids = []
         self.user_ids_dic = {}
@@ -130,16 +129,22 @@ class SubClickDataset(Dataset):
         self.num_users = 0
         self.num_items = 0
         self.rank = rank
-        self.col_start = col_start
-        self.col_end = col_end
+        self.item_start = item_start
+        self.item_end = item_end
+        self.user_start = user_start
+        self.user_end = user_end
 
-        for user_id in self.user_items_dic:
+
+        '''for user_id in self.user_items_dic:
             items = self.user_items_dic[user_id]
             for item in items:
                 if item not in self.item_ids_dic:
                     self.item_ids_dic[item] = item
                 self.user_item_ids.append([user_id, item])
-            self.user_ids_dic[user_id] = user_id
+            self.user_ids_dic[user_id] = user_id'''
+        self.user_ids_dic = parent_dataset.user_ids_dic.copy()
+        self.item_ids_dic = parent_dataset.item_ids_dic.copy()
+        self.user_item_ids = parent_dataset.user_item_ids.copy()
 
         self.max_his = parent_dataset.max_his
         self.his_items = np.zeros((len(self.user_ids_dic), self.max_his), dtype=np.uint64)
@@ -160,8 +165,8 @@ class SubClickDataset(Dataset):
         self.inherit_dataset_info(parent_dataset)
 
     def inherit_dataset_info(self, parent_dataset):
-        self.num_users = len(self.user_ids_dic)
-        self.num_items = parent_dataset.num_items
+        self.num_users = self.user_end - self.user_start + 1
+        self.num_items = self.item_end - self.item_start + 1
         user_ids = list(self.user_ids_dic.keys())
         item_ids = list(self.item_ids_dic.keys())
 
@@ -212,7 +217,7 @@ class SubClickDataset(Dataset):
         test = cf_c.modules.test.test_out()
 
         self.click_dataset = np.array(self.user_item_ids, dtype=np.uint64)
-        test.test(str(self.click_dataset.shape))
+        test.test(str(self.click_dataset.shape) + " is the shape of click_dataset of rank " + str(self.rank))
         self.init_c_instance(click_dataset=self.click_dataset, historical_items=self.his_items, masks=self.masks)
         self.c_instance.max_his = self.max_his
 

@@ -157,8 +157,8 @@ namespace cf {
         }
 
         void Data_shuffle::update_grad(idx_t * idx_arr, embeddings::Embedding *embeddings, val_t *data) {
-            std::unordered_map<idx_t, std::vector<idx_t>> items_map;
-            std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
+            std::unordered_map<int, std::vector<idx_t>> items_map;
+            std::unordered_map<int, std::vector<idx_t>> idx_map;
             idx_t k = batch_size / world_size;
             idx_t r = batch_size % world_size;
 
@@ -184,7 +184,7 @@ namespace cf {
 
             //send grads to other ranks
             for (auto i = 1; i < world_size; i++) {
-                idx_t dst = rank ^ i;
+                int dst = i;
                 std::vector<idx_t> recv_cols;
                 if (rank == 0) {
                     int data_size = items_map[dst].size();
@@ -214,11 +214,26 @@ namespace cf {
             // update local embeddings
             if (rank == 0) {
                 for (auto i = 0; i < items_map[0].size(); i++) {
+                    printf("before update\n");
                     idx_t idx = items_map[0][i];
                     auto *updated_item_embeddings = new val_t[emb_dim];
                     embeddings->weights->read_row(idx - embeddings->start_idx, updated_item_embeddings);
+                    for (idx_t j = 0; j < emb_dim; j++) {
+                        printf("%f ", updated_item_embeddings[j]);
+                    }
+                    printf("\n");
+                    printf("grad is\n");
+                    for (idx_t j = 0; j < emb_dim; j++) {
+                        printf("%f ", data[idx_map[0][i] * emb_dim + j]);
+                    }
+                    printf("\n");
                     cf_modules->optimizer->sparse_step(updated_item_embeddings, data + idx_map[0][i] * emb_dim);
                     embeddings->weights->write_row(idx - embeddings->start_idx, updated_item_embeddings);
+                    printf("after update\n");
+                    for (idx_t j = 0; j < emb_dim; j++) {
+                        printf("%f ", updated_item_embeddings[j]);
+                    }
+                    printf("\n");
                 }
             }
         }
@@ -228,6 +243,13 @@ namespace cf {
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
             idx_t k = batch_size / world_size;
             idx_t r = batch_size % world_size;
+
+            // examine idx array
+            /*for (auto i = 0; i < batch_size; i++) {
+                printf("%lu ", idx_arr[i]);
+            }
+            printf("\n");
+            printf("test start and end idx: %lu %lu\n", embeddings->start_idx, embeddings->end_idx);*/
 
             //initialize the map
             for (auto i = 0; i < world_size; i++) {
@@ -283,10 +305,21 @@ namespace cf {
                     idx_t idx = items_map[0][i];
                     auto *tmp = new val_t[emb_dim];
                     embeddings->weights->read_row(idx - embeddings->start_idx, tmp);
+                    //printf("idx is %lu, part is %lu, rank is %d\n", idx, idx_map[0][i], rank);
                     memcpy(data + idx_map[0][i] * emb_dim, tmp, emb_dim * sizeof(val_t));
                     delete[] tmp;
                 }
             }
+
+            // examine all embeddings
+            /*printf("rank %d, batch size is %d\n", rank, batch_size);
+            for (auto i = 0; i < batch_size; i++) {
+                for (auto j = 0; j < emb_dim; j++) {
+                    printf("%f ", data[i * emb_dim + j]);
+                }
+                printf("\n");
+            }
+            printf("\n");*/
         }
 
         // request data from other ranks

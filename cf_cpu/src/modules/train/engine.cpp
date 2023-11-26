@@ -126,7 +126,7 @@ namespace cf {
 
                 std::vector<idx_t> neg_ids(num_negs);
                 idx_t seed = (this->epoch - 1) * this->train_data->data_rows;
-                idx_t tile_space = this->model->item_embedding->end_idx - this->model->item_embedding->start_idx + 1;
+                idx_t tile_space = this->model->item_embedding->end_idx - this->model->item_embedding->start_idx;
 
                 // initialize nagative sampler
                 negative_samplers::NegativeSampler *negative_sampler = nullptr;
@@ -181,7 +181,7 @@ namespace cf {
                         }
                     }
 
-                    val_t * user_emb_buf = t_buf->user_emb_buf;
+                    val_t * user_emb_buf = t_buf->user_emb_bufs;
                     val_t * pos_emb_buf = t_buf->pos_emb_buf;
 
                     // do shuffling process, shuffle embeddings to t_buf->tiled_neg_emb_buf
@@ -222,7 +222,7 @@ namespace cf {
                     Data_shuffle::update_grad(t_buf->pos_item_ids, this->model->item_embedding, pos_grad_buf);
                     Data_shuffle::update_grad(t_buf->user_ids, this->model->user_embedding, user_grad_buf);
 
-                    this->model->item_embedding->zero_grad();
+                    //this->model->item_embedding->zero_grad();
 
                     end_time = MPI_Wtime();
                     time_map["forward_backward"] += end_time - start_time;

@@ -7,10 +7,12 @@ namespace modules
 namespace models
 {
 
-Model::Model(const std::shared_ptr<CFConfig> config, val_t* user_weights, val_t* item_weights, idx_t start_id, idx_t end_id)
+Model::Model(const std::shared_ptr<CFConfig> config, val_t* user_weights, val_t* item_weights,
+             idx_t start_item_id, idx_t end_item_id,
+             idx_t start_user_id, idx_t end_user_id)
 {
-    this->user_embedding = new embeddings::Embedding(config->num_users, config->emb_dim, user_weights, 0, config->num_users);
-    this->item_embedding = new embeddings::Embedding(end_id - start_id, config->emb_dim, item_weights, start_id, end_id);
+    this->user_embedding = new embeddings::Embedding(end_user_id - start_user_id, config->emb_dim, user_weights, start_user_id, end_user_id);
+    this->item_embedding = new embeddings::Embedding(end_item_id - start_item_id, config->emb_dim, item_weights, start_item_id, end_item_id);
     this->iterations = 0;
 }
 
