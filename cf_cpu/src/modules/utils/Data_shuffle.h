@@ -37,9 +37,9 @@ namespace cf {
             template<class T>
                     static void request_data(T *& requested_data, std::vector<idx_t> &requested_cols, idx_t dst_rank, embeddings::Embedding * item_embeddings);
 
-            static void update_grad(idx_t * idx_arr, embeddings::Embedding * embeddings, val_t * data);
+            static void update_grad(idx_t * idx_arr, embeddings::Embedding * embeddings, val_t * data, idx_t total_nums);
 
-            static void request_emb(idx_t * idx_arr, embeddings::Embedding * embeddings, val_t* data);
+            static void request_emb(idx_t * idx_arr, embeddings::Embedding * embeddings, val_t* data, idx_t total_nums);
 
             static idx_t * process_status;
             static idx_t num_items;
@@ -51,6 +51,7 @@ namespace cf {
             static int rank;
             static int world_size;
             static int batch_size;
+
         };
 
     } // cf

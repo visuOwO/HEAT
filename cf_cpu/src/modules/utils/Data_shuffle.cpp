@@ -89,9 +89,10 @@ namespace cf {
         // get embeddings from other ranks before computing
         // input: items, received_item_embeddings (pre-allocated buffer for positive embeddings)
         // output: received_item_embeddings (positive embeddings)
-        __attribute__((unused)) void Data_shuffle::shuffle_embs(const std::vector<idx_t> &items, val_t *received_item_embeddings,
-                                        embeddings::Embedding *item_embeddings, idx_t total_nums,
-                                        memory::ThreadBuffer *t_buf) {
+        __attribute__((unused)) void
+        Data_shuffle::shuffle_embs(const std::vector<idx_t> &items, val_t *received_item_embeddings,
+                                   embeddings::Embedding *item_embeddings, idx_t total_nums,
+                                   memory::ThreadBuffer *t_buf) {
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
             idx_t k = total_nums / world_size;
@@ -156,37 +157,40 @@ namespace cf {
             }
         }
 
-        void Data_shuffle::update_grad(idx_t * idx_arr, embeddings::Embedding *embeddings, val_t *data) {
+        void Data_shuffle::update_grad(idx_t *idx_arr, embeddings::Embedding *embeddings, val_t *data, idx_t total_nums) {
+            //MPI_Barrier(comm);
             std::unordered_map<int, std::vector<idx_t>> items_map;
             std::unordered_map<int, std::vector<idx_t>> idx_map;
-            idx_t k = batch_size / world_size;
-            idx_t r = batch_size % world_size;
+            //printf("total nums is %lu\n", total_nums);
+            idx_t k = total_nums / world_size;
+            idx_t r = total_nums % world_size;
 
             //initialize the map
-            for (auto i = 0; i < world_size; i++) {
-                items_map[i] = std::vector<idx_t>();
-                idx_map[i] = std::vector<idx_t>();
-            }
-
-            for (auto i = 0; i < batch_size; i++) {
-                idx_t idx = idx_arr[i];
-                idx_t part = idx / k;
-                if (idx - part * k < r) {
-                    part++;
+            if (rank == 0) {
+                for (auto i = 0; i < world_size; i++) {
+                    items_map[i] = std::vector<idx_t>();
+                    idx_map[i] = std::vector<idx_t>();
                 }
-                //printf("idx is %lu, part is %lu, rank is %d\n", idx, part, rank);
-                items_map[part].push_back(idx);
-                idx_map[part].push_back(i);
+
+                for (auto i = 0; i < batch_size; i++) {
+                    idx_t idx = idx_arr[i];
+                    idx_t part = idx / k;
+                    if (idx - part * k < r) {
+                        part++;
+                    }
+                    //printf("idx is %lu, part is %lu, rank is %d\n", idx, part, rank);
+                    items_map[part].push_back(idx);
+                    idx_map[part].push_back(i);
+                }
             }
 
             std::vector<idx_t> cnts(world_size, 0);
             std::vector<val_t *> received_data(world_size, nullptr);
 
             //send grads to other ranks
-            for (auto i = 1; i < world_size; i++) {
-                int dst = i;
-                std::vector<idx_t> recv_cols;
-                if (rank == 0) {
+            if (rank == 0) {
+                for (auto i = 1; i < world_size; i++) {
+                    int dst = i;
                     int data_size = items_map[dst].size();
                     MPI_Send((void *) &data_size, 1, MPI_UINT64_T, dst, 0, comm);
                     MPI_Send((void *) items_map[dst].data(), data_size, MPI_UINT64_T, dst, 0, comm);
@@ -195,54 +199,63 @@ namespace cf {
                         memcpy(send_data + j * emb_dim, data + idx_map[dst][j] * emb_dim, emb_dim * sizeof(val_t));
                     }
                     MPI_Send((void *) send_data, data_size * emb_dim, MPI_FLOAT, dst, 0, comm);
-                } else {
-                    int data_size;
-                    MPI_Recv((void *) &data_size, 1, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
-                    recv_cols.resize(data_size);
-                    MPI_Recv((void *) recv_cols.data(), data_size, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
-                    auto grads = new val_t[data_size * emb_dim];
-                    MPI_Recv((void *) grads, data_size * emb_dim, MPI_FLOAT, 0, 0, comm, MPI_STATUS_IGNORE);
-                    for (idx_t j = 0; j < data_size; j++) {
-                        auto *updated_item_embeddings = new val_t[emb_dim];
-                        embeddings->weights->read_row(recv_cols[j] - embeddings->start_idx, updated_item_embeddings);
-                        cf_modules->optimizer->sparse_step(updated_item_embeddings, grads + j * emb_dim);
-                        embeddings->weights->write_row(recv_cols[j] - embeddings->start_idx, updated_item_embeddings);
-                    }
+                }
+            } else {
+                std::vector<idx_t> recv_cols;
+                int data_size;
+                MPI_Recv((void *) &data_size, 1, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                recv_cols.resize(data_size);
+                MPI_Recv((void *) recv_cols.data(), data_size, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                auto grads = new val_t[data_size * emb_dim];
+                MPI_Recv((void *) grads, data_size * emb_dim, MPI_FLOAT, 0, 0, comm, MPI_STATUS_IGNORE);
+                for (idx_t j = 0; j < data_size; j++) {
+                    auto *updated_item_embeddings = new val_t[emb_dim];
+                    /*printf("gradient for %lu is\n", recv_cols[j]);
+                    printf("%lu\n", recv_cols[j] - embeddings->start_idx);*/
+                    embeddings->weights->read_row(recv_cols[j] - embeddings->start_idx, updated_item_embeddings);
+                    cf_modules->optimizer->sparse_step(updated_item_embeddings, grads + j * emb_dim);
+                    embeddings->weights->write_row(recv_cols[j] - embeddings->start_idx, updated_item_embeddings);
                 }
             }
 
             // update local embeddings
             if (rank == 0) {
                 for (auto i = 0; i < items_map[0].size(); i++) {
-                    printf("before update\n");
+                    //printf("before update\n");
                     idx_t idx = items_map[0][i];
                     auto *updated_item_embeddings = new val_t[emb_dim];
                     embeddings->weights->read_row(idx - embeddings->start_idx, updated_item_embeddings);
-                    for (idx_t j = 0; j < emb_dim; j++) {
+                    /*for (idx_t j = 0; j < emb_dim; j++) {
                         printf("%f ", updated_item_embeddings[j]);
                     }
                     printf("\n");
-                    printf("grad is\n");
+                    printf("grad for %lu is\n", idx);
                     for (idx_t j = 0; j < emb_dim; j++) {
                         printf("%f ", data[idx_map[0][i] * emb_dim + j]);
                     }
-                    printf("\n");
+                    printf("\n");*/
                     cf_modules->optimizer->sparse_step(updated_item_embeddings, data + idx_map[0][i] * emb_dim);
                     embeddings->weights->write_row(idx - embeddings->start_idx, updated_item_embeddings);
-                    printf("after update\n");
+                    /*printf("after update\n");
                     for (idx_t j = 0; j < emb_dim; j++) {
                         printf("%f ", updated_item_embeddings[j]);
                     }
-                    printf("\n");
+                    printf("\n");*/
                 }
             }
+            //printf("finish update\n");
+            //MPI_Barrier(comm);
         }
 
-        void Data_shuffle::request_emb(idx_t * idx_arr, embeddings::Embedding *embeddings, val_t* data) {
+        void Data_shuffle::request_emb(idx_t *idx_arr, embeddings::Embedding *embeddings, val_t *data, idx_t total_nums) {
+            //MPI_Barrier(comm);
+            //printf("total nums is %lu\n", total_nums);
             std::unordered_map<idx_t, std::vector<idx_t>> items_map;
             std::unordered_map<idx_t, std::vector<idx_t>> idx_map;
-            idx_t k = batch_size / world_size;
-            idx_t r = batch_size % world_size;
+            idx_t k = total_nums / world_size;
+            idx_t r = total_nums % world_size;
+            int local_rank;
+            MPI_Comm_rank(MPI_COMM_WORLD, &local_rank);
 
             // examine idx array
             /*for (auto i = 0; i < batch_size; i++) {
@@ -252,55 +265,80 @@ namespace cf {
             printf("test start and end idx: %lu %lu\n", embeddings->start_idx, embeddings->end_idx);*/
 
             //initialize the map
-            for (auto i = 0; i < world_size; i++) {
-                items_map[i] = std::vector<idx_t>();
-                idx_map[i] = std::vector<idx_t>();
-            }
-
-            for (auto i = 0; i < batch_size; i++) {
-                idx_t idx = idx_arr[i];
-                idx_t part = idx / k;
-                if (idx - part * k < r) {
-                    part++;
+            if (local_rank == 0) {
+                for (auto i = 0; i < world_size; i++) {
+                    items_map[i] = std::vector<idx_t>();
+                    idx_map[i] = std::vector<idx_t>();
                 }
-                //printf("idx is %lu, part is %lu, rank is %d\n", idx, part, rank);
-                items_map[part].push_back(idx);
-                idx_map[part].push_back(i);
-            }
 
-            std::vector<idx_t> cnts(world_size, 0);
-            std::vector<val_t *> received_data(world_size, nullptr);
+                for (auto i = 0; i < batch_size; i++) {
+                    idx_t idx = idx_arr[i];
+                    idx_t part = idx / k;
+                    if (idx - part * k < r) {
+                        part++;
+                    }
+                    //printf("idx is %lu, part is %lu, rank is %d\n", idx, part, rank);
+                    items_map[part].push_back(idx);
+                    idx_map[part].push_back(i);
+                }
+            }
 
             //request data from other ranks
-            for (auto i = 1; i < world_size; i++) {
-                idx_t dst = rank ^ i;
-                std::vector<idx_t> recv_cols;
-                if (rank == 0) {
+            if (local_rank == 0) {
+                for (auto i = 1; i < world_size; i++) {
+                    int dst = i;
                     int request_size = items_map[dst].size();
-                    auto * recv_data = new val_t[request_size * emb_dim];
+                    auto *recv_data = new val_t[request_size * emb_dim];
                     MPI_Send((void *) &request_size, 1, MPI_UINT64_T, dst, 0, comm);
+                    //printf("send1\n");
                     MPI_Send((void *) items_map[dst].data(), request_size, MPI_UINT64_T, dst, 0, comm);
+                    //printf("send2\n");
                     MPI_Recv((void *) recv_data, request_size * emb_dim, MPI_FLOAT, dst, 0, comm, MPI_STATUS_IGNORE);
+                    //printf("recv\n");
                     for (auto j = 0; j < request_size; j++) {
                         memcpy(data + idx_map[dst][j] * emb_dim, recv_data + j * emb_dim, emb_dim * sizeof(val_t));
                     }
                     delete[] recv_data;
-                } else {
-                    int request_size;
-                    MPI_Recv((void *) &request_size, 1, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
-                    recv_cols.resize(request_size);
-                    MPI_Recv((void *) recv_cols.data(), request_size, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
-                    auto send_data = new val_t[request_size * emb_dim];
-                    for (idx_t j = 0; j < request_size; j++) {
-                        embeddings->weights->read_row(recv_cols[j] - embeddings->start_idx, send_data + j * emb_dim);
-                    }
-                    MPI_Send((void *) send_data, request_size * emb_dim, MPI_FLOAT, 0, 0, comm);
-                    delete[] send_data;
                 }
+            } else {
+                int request_size;
+                std::vector<idx_t> recv_cols;
+                //printf("recv0\n");
+                //printf("start_idx is %lu\n", embeddings->start_idx);
+                MPI_Recv((void *) &request_size, 1, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                //printf("recv1\n");
+                //printf("start_idx is %lu\n", embeddings->start_idx);
+                recv_cols.resize(request_size);
+                MPI_Recv((void *) recv_cols.data(), request_size, MPI_UINT64_T, 0, 0, comm, MPI_STATUS_IGNORE);
+                //printf("recv2\n");
+                //printf("start_idx is %lu\n", embeddings->start_idx);
+                auto send_data = new val_t[request_size * emb_dim];
+                /*printf("receive data is\n");
+                for (idx_t j = 0; j < request_size; j++) {
+                    printf("%lu ", recv_cols[j]);
+                }
+                printf("\n");
+                printf("start_idx is %lu\n", embeddings->start_idx);*/
+                for (idx_t j = 0; j < request_size; j++) {
+                    //printf("%lu %lu\n", recv_cols[j] - embeddings->start_idx, recv_cols[j]);
+                    embeddings->weights->read_row(recv_cols[j] - embeddings->start_idx, send_data + j * emb_dim);
+                }
+                /*printf("data to send is\n");
+                for (idx_t j = 0; j < request_size; j++) {
+                    for (idx_t k = 0; k < emb_dim; k++) {
+                        printf("%f ", send_data[j * emb_dim + k]);
+                    }
+                    printf("\n");
+                }
+                printf("\n");
+                printf("read\n");*/
+                MPI_Send((void *) send_data, request_size * emb_dim, MPI_FLOAT, 0, 0, comm);
+                //printf("send\n");
+                delete[] send_data;
             }
 
             //copy local embeddings
-            if (rank == 0) {
+            if (local_rank == 0) {
                 for (auto i = 0; i < items_map[0].size(); i++) {
                     idx_t idx = items_map[0][i];
                     auto *tmp = new val_t[emb_dim];
@@ -319,7 +357,9 @@ namespace cf {
                 }
                 printf("\n");
             }
-            printf("\n");*/
+            printf("\n");
+
+            MPI_Barrier(comm);*/
         }
 
         // request data from other ranks

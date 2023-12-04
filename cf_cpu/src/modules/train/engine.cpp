@@ -102,6 +102,11 @@ namespace cf {
                 Data_shuffle::cf_modules = this->cf_modules;
                 Data_shuffle::batch_size = this->cf_config->mini_batch_size;
 
+                idx_t total_user;
+                MPI_Allreduce(&this->model->user_embedding->end_idx, &total_user, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+                idx_t total_item;
+                MPI_Allreduce(&this->model->item_embedding->end_idx, &total_item, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+
                 idx_t process_status = 1;   // 1 means the process is not finished
                 idx_t system_status;
 
@@ -181,12 +186,15 @@ namespace cf {
                         }
                     }
 
-                    val_t * user_emb_buf = t_buf->user_emb_bufs;
+                    val_t * user_emb_buf = t_buf->user_emb_buf;
                     val_t * pos_emb_buf = t_buf->pos_emb_buf;
 
                     // do shuffling process, shuffle embeddings to t_buf->tiled_neg_emb_buf
-                    Data_shuffle::request_emb(t_buf->pos_item_ids, this->model->item_embedding, pos_emb_buf);
-                    Data_shuffle::request_emb(t_buf->user_ids, this->model->user_embedding, user_emb_buf);
+                    Data_shuffle::request_emb(t_buf->pos_item_ids, this->model->item_embedding, pos_emb_buf, total_item);
+                    Data_shuffle::request_emb(t_buf->user_ids, this->model->user_embedding, user_emb_buf, total_user);
+
+                    memset(t_buf->user_grad_buf, 0, batch_size * emb_dim * sizeof(val_t));
+                    memset(t_buf->pos_grad_buf, 0, batch_size * emb_dim * sizeof(val_t));
 
                     MPI_Bcast(user_emb_buf, batch_size * emb_dim, MPI_FLOAT, 0, MPI_COMM_WORLD);
                     MPI_Bcast(pos_emb_buf, batch_size * emb_dim, MPI_FLOAT, 0, MPI_COMM_WORLD);
@@ -195,6 +203,7 @@ namespace cf {
                     time_map["shuffle_embs"] += end_time - start_time;
                     start_time = MPI_Wtime();
 
+#pragma omp parallel for
                     for (idx_t j = 0; j < batch_size; j++) {
                         idx_t user_id = 0;
                         idx_t item_id = 0;
@@ -219,8 +228,8 @@ namespace cf {
                     MPI_Allreduce(pos_grad_buf, pos_grad_buf, batch_size * emb_dim, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
                     MPI_Allreduce(user_grad_buf, user_grad_buf, batch_size * emb_dim, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
 
-                    Data_shuffle::update_grad(t_buf->pos_item_ids, this->model->item_embedding, pos_grad_buf);
-                    Data_shuffle::update_grad(t_buf->user_ids, this->model->user_embedding, user_grad_buf);
+                    Data_shuffle::update_grad(t_buf->pos_item_ids, this->model->item_embedding, pos_grad_buf, total_item);
+                    Data_shuffle::update_grad(t_buf->user_ids, this->model->user_embedding, user_grad_buf, total_user);
 
                     //this->model->item_embedding->zero_grad();
 

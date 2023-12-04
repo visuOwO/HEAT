@@ -41,9 +41,9 @@ namespace cf {
                 /*auto * user_emb_buf = new val_t[emb_dim];
                 val_t *user_emb_ptr = user_embedding_weights->read_row(user_id-this->user_embedding->start_idx, user_emb_buf);*/
                 // val_t *user_grad_ptr = user_embedding_grads->read_row(user_id, t_buf->user_grad_buf);
-                printf("idx %lu\n", idx);
+                //printf("idx %lu\n", idx);
                 val_t *user_emb_ptr =
-                        t_buf->user_emb_bufs + idx * emb_dim;
+                        t_buf->user_emb_buf + idx * emb_dim;
                 val_t *user_grad_ptr =
                         t_buf->user_grad_buf + idx * emb_dim;
 
@@ -124,12 +124,16 @@ namespace cf {
                     memcpy(t_buf->neg_emb_buf1 + neg_idx * emb_dim, neg_emb_ptr, emb_dim * sizeof(val_t));
 
                     // print neg emb
-                    printf("neg emb for %lu at rank %d: \n", neg_ids[neg_idx], rank);
+                    /*printf("neg emb for %lu at rank %d: \n", neg_ids[neg_idx], rank);
                     for (idx_t i = 0; i < emb_dim; ++i) {
                         printf("%f ", neg_emb_ptr[i]);
                     }
-                    printf("\n");
+                    printf("\n");*/
                 }
+
+                //MPI_Barrier(MPI_COMM_WORLD);
+
+                //printf("test0\n");
 
                 end_time = omp_get_wtime();
                 t_buf->time_map["read_emb"] = t_buf->time_map["read_emb"] + (end_time - start_time);
@@ -146,6 +150,10 @@ namespace cf {
                 start_time = end_time;
 
                 // compute user negative cosine similarity, score
+
+                //MPI_Barrier(MPI_COMM_WORLD);
+
+                //printf("test1\n");
 
                 val_t user_pos_cos = user_pos_dot / (user_norm * pos_norm);
                 Eigen::Array<val_t, 1, Eigen::Dynamic> selected_negs_negs_dots = (neg_neg_dots.array() < eps).select(
@@ -166,20 +174,33 @@ namespace cf {
                 exp_score_sum += std::exp(-1.0 * max_score);
                 val_t loss = max_score + std::log(exp_score_sum);
                 Eigen::Array<val_t, 1, Eigen::Dynamic> loss_grad = (exp_score / exp_score_sum) * score_mul;
-                printf("loss %f\n", loss);
+                /*printf("loss %f\n", loss);
                 printf("exp_score_sum %f\n", exp_score_sum);
                 printf("score_mul %f\n", score_mul);
                 printf("exp_score is :");
                 for (idx_t i = 0; i < num_negs; ++i) {
                     printf("%f ", exp_score[i]);
                 }
-                printf("\n");
+                printf("\n");*/
+
+                //MPI_Barrier(MPI_COMM_WORLD);
+
+                /*printf("test2\n");
+                printf("%f\n", t_buf->time_map["loss"]);
+                printf("%f\n", t_buf->time_map["forward"]);
+                printf("%f\n", end_time);
+                printf("%f\n", forward_time);
+                printf("%f\n", start_time);*/
 
                 end_time = omp_get_wtime();
                 t_buf->time_map["loss"] = t_buf->time_map["loss"] + (end_time - start_time);
                 t_buf->time_map["forward"] = t_buf->time_map["forward"] + (end_time - forward_time);
                 start_time = end_time;
                 double backward_time = end_time;
+
+                //MPI_Barrier(MPI_COMM_WORLD);
+
+                //printf("test3\n");
 
                 for (idx_t neg_idx = 0; neg_idx < neg_ids.size(); ++neg_idx) {
                     idx_t neg_id = neg_ids[neg_idx];
@@ -202,17 +223,23 @@ namespace cf {
                     pos_emb_grad += loss_grad(0, neg_idx) * u_p_cos_p_grad;
                     neg_emb_grad += loss_grad(0, neg_idx) * u_n_cos_n_grad;
 
+                    /*MPI_Barrier(MPI_COMM_WORLD);
+
                     printf("test %f\n", loss_grad(0, neg_idx));
                     printf("u_n_cos_u_grad for %lu at rank %d: \n", neg_id, rank);
                     for (idx_t i = 0; i < emb_dim; ++i) {
                         printf("%f ", u_n_cos_u_grad[i]);
                     }
 
+                    MPI_Barrier(MPI_COMM_WORLD);
+
                     printf("neg_grad_ptr for %lu at rank %d: \n", neg_id, rank);
                     for (idx_t i = 0; i < emb_dim; ++i) {
                         printf("%f ", neg_emb_grad[i]);
                     }
                     printf("\n");
+
+                    MPI_Barrier(MPI_COMM_WORLD);*/
 
                     cf_modules->optimizer->sparse_step(neg_embs.row(neg_idx).data(), neg_grad_ptr);
                     item_embedding_weights->write_row(neg_id, neg_embs.row(neg_idx).data());

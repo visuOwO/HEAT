@@ -30,7 +30,7 @@ struct ThreadBuffer
         pos_item_ids = static_cast<idx_t*>(splatt_malloc(batch_size * sizeof(idx_t)));
         user_ids = static_cast<idx_t*>(splatt_malloc(batch_size * sizeof(idx_t)));
         pos_emb_buf = static_cast<val_t*>(splatt_malloc(batch_size * emb_dim * sizeof(val_t)));   // positive
-        user_emb_bufs = static_cast<val_t*>(splatt_malloc(batch_size * emb_dim * sizeof(val_t)));   // user
+        user_emb_buf = static_cast<val_t*>(splatt_malloc(batch_size * emb_dim * sizeof(val_t)));   // user
 
 
         time_map["data"] = 0.0;
@@ -62,7 +62,7 @@ struct ThreadBuffer
         splatt_free(tiled_neg_emb_buf);
         splatt_free(pos_item_ids);
         splatt_free(user_ids);
-        splatt_free(user_emb_bufs);
+        splatt_free(user_emb_buf);
         splatt_free(his_emb_buf);
         time_map.clear();
     }
@@ -78,7 +78,7 @@ struct ThreadBuffer
     val_t* tiled_neg_emb_buf;   // tiled negative embeddings
     idx_t* pos_item_ids;
     idx_t* user_ids;
-    val_t* user_emb_bufs;   // user embeddings
+    val_t* user_emb_buf;   // user embeddings
     val_t* his_emb_buf;
 
     std::map<std::string, double> time_map;
