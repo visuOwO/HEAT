@@ -60,8 +60,8 @@ if __name__ == "__main__":
             end = start + k + (i < r)
             col_start = i * kk + min(i, rr)
             col_end = col_start + kk + (i < rr)
-            test.test(str(start) + " is the start index of user")
-            test.test(str(col_start) + " is the start index of item")
+            # test.test(str(start) + " is the start index of user")
+            # test.test(str(col_start) + " is the start index of item")
             sub_dataset = SubClickDataset(train_data, start, end, col_start, col_end, i)
             MPI.COMM_WORLD.send(sub_dataset, dest=i, tag=11)
             # test.test(str(len(sub_dataset.user_item_ids)) + " is the length of sub user_item_ids of rank " + str(i))
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         # print('-- Start receiving data -- in ' + str(rank))
         sub_dataset = MPI.COMM_WORLD.recv(source=0, tag=11)
         test_data = sub_dataset
-    test.test(str(rank) + "starts at " + str(test_data.item_start) + " and ends at " + str(test_data.item_end))
+    # test.test(str(rank) + "starts at " + str(test_data.item_start) + " and ends at " + str(test_data.item_end))
     print('--- Finished loading data --- in ' + str(rank))
 
     aggregator_weights = AggregatorWeights(cf_config)

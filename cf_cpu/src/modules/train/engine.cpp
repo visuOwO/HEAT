@@ -213,7 +213,7 @@ namespace cf {
                         idx_t train_data_idx = this->positive_sampler->read(i + j);
                         this->train_data->read_user_item(train_data_idx, user_id, item_id);
                         negative_sampler->sampling(neg_ids);
-                        printf("rank %d start forward_backward\n", rank);
+                        //printf("rank %d start forward_backward\n", rank);
                         auto tmp = this->model->forward_backward(user_id, j,
                                                                  neg_ids,
                                                                  std::vector<idx_t>(),

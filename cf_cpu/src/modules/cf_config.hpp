@@ -16,7 +16,7 @@ struct CFConfig
         : emb_dim(emb_dim), num_negs(num_negs), num_users(num_users), num_items(num_items), train_size(train_size), 
             neg_sampler(neg_sampler), tile_size(tile_size), mini_batch_size(mini_batch_size), refresh_interval(refresh_interval), num_subepochs(num_subepochs), l2(l2), clip_val(clip_val), milestones(milestones.begin(), milestones.end()), l_r(l_r)
     {
-        std::cout << "Test in initialize cf_config" << std::endl;
+        //std::cout << "Test in initialize cf_config" << std::endl;
     }
 
     idx_t emb_dim;

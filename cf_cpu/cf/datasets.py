@@ -217,7 +217,7 @@ class SubClickDataset(Dataset):
         test = cf_c.modules.test.test_out()
 
         self.click_dataset = np.array(self.user_item_ids, dtype=np.uint64)
-        test.test(str(self.click_dataset.shape) + " is the shape of click_dataset of rank " + str(self.rank))
+        # test.test(str(self.click_dataset.shape) + " is the shape of click_dataset of rank " + str(self.rank))
         self.init_c_instance(click_dataset=self.click_dataset, historical_items=self.his_items, masks=self.masks)
         self.c_instance.max_his = self.max_his
 

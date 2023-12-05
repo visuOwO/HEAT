@@ -21,7 +21,7 @@ namespace cf {
                                                         std::unordered_map<idx_t, std::vector<val_t> > &remote_item_embeddings_grads, // to store gradients of embeddings
                                                         std::unordered_map<idx_t, std::vector<val_t> > &remote_user_embeddings_grads
             ) {
-                printf("MatrixFactorization::forward_backward\n");
+                //printf("MatrixFactorization::forward_backward\n");
                 double start_time = omp_get_wtime();
                 double forward_time = start_time;
                 double f_b_time = start_time;
@@ -97,7 +97,7 @@ namespace cf {
                 t_buf->time_map["norm"] = t_buf->time_map["norm"] + (end_time - start_time);
 
                 // print pos emb
-                printf("pos emb for %lu at rank %d: \n", idx, rank);
+                /*printf("pos emb for %lu at rank %d: \n", idx, rank);
                 for (idx_t i = 0; i < emb_dim; ++i) {
                     printf("%f ", pos_emb_ptr[i]);
                 }
@@ -108,7 +108,7 @@ namespace cf {
                 for (idx_t i = 0; i < emb_dim; ++i) {
                     printf("%f ", user_emb_ptr[i]);
                 }
-                printf("\n");
+                printf("\n");*/
 
                 start_time = end_time;
 
